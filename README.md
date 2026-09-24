@@ -37,7 +37,22 @@ If Chrome isn't found automatically, set `CHROME_PATH=/path/to/chrome`. For stil
 
 ## Disclaimer
 
-This is satire and commentary on a public figure. The quotes and facts it cites come from public sources listed on the end card and in `film.html`: Dario Amodei's May 2025 Axios interview, his January 2025 essay *On DeepSeek and Export Controls*, Anthropic's mission statement, its September 2025 terms-of-service update, its supported-countries page, Claude Max pricing, and valuation figures as reported by TechCrunch and others. The film is not affiliated with or endorsed by Anthropic.
+This is satire and commentary on a public figure. It is not affiliated with or endorsed by Anthropic. The jokes, framing and conclusions are opinion. The quotes and figures come from the public sources below, which are also summarized on the end card and in the note under the player in `film.html`.
+
+### Sources
+
+| Scene (timestamp) | Claim in the film | Source |
+|---|---|---|
+| Count 02 · jobs (~13 s) | "Within 1–5 years, AI could wipe out half of entry-level white-collar jobs." | Axios, [*Behind the Curtain: A white-collar bloodbath*](https://www.axios.com/2025/05/28/ai-jobs-white-collar-unemployment-anthropic), 28 May 2025 (interview with Dario Amodei) |
+| Count 02 · valuation (~16 s) | Anthropic valued at $61.5B (2025.03) → $183B (2025.09) → $380B (2026.02) → $965B (2026.05) | Anthropic: [Series E](https://www.anthropic.com/news/anthropic-raises-series-e-at-usd61-5b-post-money-valuation), [Series F](https://www.anthropic.com/news/anthropic-raises-series-f-at-usd183b-post-money-valuation), [Series G](https://www.anthropic.com/news/anthropic-raises-30-billion-series-g-funding-380-billion-post-money-valuation), [Series H](https://www.anthropic.com/news/series-h); TechCrunch on [Series G](https://techcrunch.com/2026/02/12/anthropic-raises-another-30-billion-in-series-g-with-a-new-value-of-380-billion/) and [Series H](https://techcrunch.com/2026/05/28/anthropic-raises-65-billion-nears-1t-valuation-ahead-of-ipo/) |
+| Count 02 · pricing (~18 s) | Claude Max costs $200 / month | [claude.com/pricing](https://claude.com/pricing) (top Max tier) |
+| Count 03 · DeepSeek (~20 s) | DeepSeek R1 released 20 January 2025 | [DeepSeek release notes](https://api-docs.deepseek.com/news/news250120) |
+| Count 03 · essay (~22 s) | Nine days later: "DeepSeek makes export controls even more existentially important." | Dario Amodei, [*On DeepSeek and Export Controls*](https://darioamodei.com/on-deepseek-and-export-controls), 29 January 2025 |
+| Count 03 · terms of service (~27 s) | No sales to entities more than 50% Chinese-owned, even if incorporated abroad; national-security rationale; revenue impact in the hundreds of millions of dollars | Anthropic, [*Updating restrictions of sales to unsupported regions*](https://www.anthropic.com/news/updating-restrictions-of-sales-to-unsupported-regions), September 2025 |
+| Count 03 · mission (~31 s) | Mission: "ensure that the world safely makes the transition through transformative AI" | [anthropic.com/company](https://www.anthropic.com/company) |
+| Count 03 · mission (~33 s) | Mainland China, Hong Kong and Macau are not supported regions | [anthropic.com/supported-countries](https://www.anthropic.com/supported-countries) |
+
+The 2021 departure from OpenAI in Count 01 and the "Responsible Scaling" driving sequence are commentary rather than quotations. Chinese on-screen quotes are the author's translations. Figures are as of the dates shown in the film and may have changed since.
 
 ## License
 
