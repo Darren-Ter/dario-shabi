@@ -4,13 +4,13 @@ A 51-second satirical short film in Chinese, styled as a riso-printed case file 
 
 一部 51 秒的中文讽刺短片，以孔版印刷（riso）风格的「案卷」形式呈现。画面与音乐全部由代码实时生成：一个 HTML 文件，用 Canvas 绘制每一帧，用代码逐采样合成 128 BPM 的配乐。
 
-![Title card](docs/03.38.jpg)
+[![▶ Watch the film](docs/03.38.jpg)](https://video.aigenius.media/film.mp4)
 
 | | |
 |---|---|
 | ![Mugshot](docs/05.44.jpg) | ![Terms of service](docs/28.97.jpg) |
 
-**▶ Watch:** [darren-ter.github.io/dario-shabi/film.html](https://darren-ter.github.io/dario-shabi/film.html) (desktop browser, sound on) — or download `film.mp4` from the [latest release](../../releases/latest).
+**▶ Watch:** [the MP4 (1080p)](https://video.aigenius.media/film.mp4) · [the live version in your browser](https://darren-ter.github.io/dario-shabi/film.html) (desktop, sound on)
 
 ## Run it
 
