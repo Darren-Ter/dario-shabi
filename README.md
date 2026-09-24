@@ -10,7 +10,7 @@ A 51-second satirical short film in Chinese, styled as a riso-printed case file 
 |---|---|
 | ![Mugshot](docs/05.44.jpg) | ![Terms of service](docs/28.97.jpg) |
 
-**▶ Watch:** [the MP4 (1080p)](https://video.aigenius.media/film.mp4) · [the live version in your browser](https://darren-ter.github.io/dario-shabi/film.html) (desktop, sound on)
+**▶ Watch:** [film.mp4 (1080p, sound on)](https://video.aigenius.media/film.mp4)
 
 ## Run it
 
