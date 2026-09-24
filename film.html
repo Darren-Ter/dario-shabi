@@ -1,0 +1,1198 @@
+<title>为什么 Dario 是个大傻逼</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=IBM+Plex+Mono:wght@500;700&family=Noto+Sans+SC:wght@500;900&family=Noto+Serif+SC:wght@900&family=ZCOOL+QingKe+HuangYou&display=swap">
+<style>
+  :root {
+    color-scheme: dark;
+    --stage: #0f0e12;
+    --panel: #1b1a20;
+    --text: #efece6;
+    --muted: #8f8a96;
+    --accent: #ec3b2b;
+    --track: #2c2a33;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--stage);
+    color: var(--text);
+    font-family: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding-inline: 16px; padding-block: 24px; box-sizing: border-box; gap: 14px;
+  }
+  .frame { position: relative; width: 100%; max-width: 1280px; aspect-ratio: 16 / 9; background: #000; box-shadow: 0 30px 80px rgba(0,0,0,.6); }
+  canvas { display: block; width: 100%; height: 100%; }
+  #play {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    background: rgba(15,14,18,.55); border: 0; color: var(--text); cursor: pointer; font: inherit;
+  }
+  #play .btn { width: 84px; height: 84px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; }
+  #play .btn::before { content: ""; border-left: 28px solid #fff; border-top: 17px solid transparent; border-bottom: 17px solid transparent; margin-left: 8px; }
+  #play span { font-weight: 900; letter-spacing: .08em; font-size: 14px; }
+  #play:focus-visible, .ctl button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+  .ctl { width: 100%; max-width: 1280px; display: flex; align-items: center; gap: 12px; }
+  .ctl button { background: var(--panel); color: var(--text); border: 1px solid var(--track); border-radius: 6px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; min-width: 64px; }
+  #bar { flex: 1; accent-color: var(--accent); }
+  #time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
+  .note { max-width: 1280px; width: 100%; color: var(--muted); font-size: 12px; line-height: 1.6; }
+  body.export { padding: 0; display: block; background: #000; }
+  body.export .frame { max-width: none; width: 1920px; height: 1080px; box-shadow: none; }
+  body.export #play, body.export .ctl, body.export .note { display: none; }
+</style>
+
+<div class="frame">
+  <canvas id="c" width="1920" height="1080"></canvas>
+  <button id="play" aria-label="播放短片"><div class="btn"></div><span>播放（有声音）</span></button>
+</div>
+<div class="ctl">
+  <button id="pp">播放</button>
+  <input id="bar" type="range" min="0" max="51.375" step="0.01" value="0" aria-label="进度">
+  <span id="time">0:00 / 0:51</span>
+</div>
+<p class="note">讽刺作品。Dario 本人的发言：2025 年 5 月 Axios 采访（一半入门级白领岗位）、2025 年 1 月个人博客《On DeepSeek and Export Controls》。Anthropic 公司层面（Dario 任 CEO）：使命陈述、2025 年 9 月服务条款更新（中资控股 &gt;50% 限制，自估损失数亿美元收入）、anthropic.com/supported-countries、Claude Max 定价；融资估值据 TechCrunch 等报道。画面与音乐全部由代码实时生成。</p>
+
+<script>
+(() => {
+/* ================= timing: 128 BPM, everything on the grid ================= */
+const W = 1920, H = 1080, SR = 44100, BT = 60 / 128, BAR = BT * 4, DUR = 51.375;
+
+/* ================= palette: four riso inks on paper ================= */
+const K = {
+  paper: '#F3EEE2', paper2: '#E6DFD0', white: '#FFFDF6', ink: '#1C1B22', red: '#EC3B2B', blue: '#2446C9',
+  yellow: '#FFD21A', grey: '#8B857A', skin: '#F2C9A8', wood: '#E9C58C', claude: '#D97757', dark: '#141217'
+};
+const FS = '"Noto Serif SC","Songti SC",serif';
+const FB = '"Noto Sans SC","PingFang SC",sans-serif';
+const FD = '"ZCOOL QingKe HuangYou","Noto Sans SC",sans-serif';
+const FA = '"Anton","Noto Sans SC",sans-serif';
+const FM = '"IBM Plex Mono","Noto Sans SC",monospace';
+
+/* ================= math ================= */
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const P = (t, a, b) => clamp((t - a) / (b - a));
+const eOut = x => 1 - Math.pow(1 - x, 3);
+const eIn = x => x * x * x;
+const eIO = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const eBack = x => { const c1 = 1.7, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+const cnv = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+// slam: overshoot-free punch from big to 1 in ~0.1s
+const slamS = (u, t0, from = 1.5, len = .1) => u < t0 ? 0 : lerp(from, 1, eOut(P(u, t0, t0 + len)));
+
+/* ================= type ================= */
+function font(size, f = FB, w = 900) { return `${f === FA || f === FD ? 400 : w} ${size}px ${f}`; }
+function text(ctx, s, x, y, o = {}) {
+  const size = o.size || 60;
+  ctx.save(); ctx.translate(x, y);
+  if (o.rot) ctx.rotate(o.rot);
+  if (o.scale != null) ctx.scale(o.scale, o.scale);
+  ctx.globalAlpha *= (o.alpha ?? 1);
+  if (o.mul) ctx.globalCompositeOperation = 'multiply';
+  ctx.font = font(size, o.font || FB, o.weight || 900);
+  ctx.letterSpacing = (o.ls || 0) + 'px';
+  ctx.textAlign = o.align || 'center'; ctx.textBaseline = o.base || 'middle';
+  if (o.shadow) { ctx.fillStyle = o.shadow; ctx.fillText(s, o.sx ?? size * .05, o.sy ?? size * .05); }
+  if (o.stroke) { ctx.lineWidth = o.strokeW || size * .12; ctx.strokeStyle = o.stroke; ctx.lineJoin = 'round'; ctx.strokeText(s, 0, 0); }
+  ctx.fillStyle = o.color || K.ink; ctx.fillText(s, 0, 0);
+  ctx.restore();
+}
+function tw(ctx, s, size, f = FB, w = 900, ls = 0) { ctx.save(); ctx.font = font(size, f, w); ctx.letterSpacing = ls + 'px'; const r = ctx.measureText(s).width; ctx.restore(); return r; }
+// rich line: [[str, color], ...]
+function rich(ctx, segs, x, y, size, o = {}) {
+  const f = o.font || FB, wgt = o.weight || 900;
+  const total = segs.reduce((a, [s]) => a + tw(ctx, s, size, f, wgt), 0);
+  let cx = o.align === 'center' ? x - total / 2 : o.align === 'right' ? x - total : x;
+  const out = [];
+  for (const [s, c] of segs) { const w = tw(ctx, s, size, f, wgt); out.push([cx, w]); text(ctx, s, cx, y, { size, font: f, weight: wgt, color: c || K.ink, align: 'left', alpha: o.alpha }); cx += w; }
+  return out; // x,w of each segment
+}
+// each character drops in on its own stagger
+function stagger(ctx, s, x, y, u, t0, o = {}) {
+  const size = o.size || 80, f = o.font || FS, step = o.step ?? .022, cols = o.cols || [];
+  let cx = x;
+  [...s].forEach((ch, i) => {
+    const w = tw(ctx, ch, size, f, o.weight || 900);
+    const k = eOut(P(u, t0 + i * step, t0 + i * step + .16));
+    if (k > 0) text(ctx, ch, cx, y + (1 - k) * size * .45, { size, font: f, weight: o.weight || 900, color: cols[i] || o.color || K.ink, align: 'left', alpha: k });
+    cx += w;
+  });
+  return cx - x;
+}
+function typewriter(ctx, s, x, y, u, t0, t1, o = {}) {
+  const n = Math.floor(P(u, t0, t1) * s.length + 1e-6);
+  if (n <= 0) return;
+  text(ctx, s.slice(0, n), x, y, { align: 'left', ...o });
+  if (n < s.length && (u * 4 % 1) < .6) { const w = tw(ctx, s.slice(0, n), o.size || 40, o.font || FB, o.weight || 900); ctx.fillStyle = o.color || K.ink; ctx.fillRect(x + w + 6, y - (o.size || 40) * .45, (o.size || 40) * .08, (o.size || 40) * .9); }
+}
+// highlighter swipe, overprinted
+function marker(ctx, x, y, w, h, k, col = K.yellow) {
+  if (k <= 0) return;
+  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = col;
+  ctx.beginPath(); ctx.moveTo(x, y + 4); ctx.lineTo(x + w * k, y); ctx.lineTo(x + w * k + 6, y + h - 3); ctx.lineTo(x - 4, y + h); ctx.closePath(); ctx.fill(); ctx.restore();
+}
+
+/* ================= shapes ================= */
+function rr(ctx, x, y, w, h, r, fill, stroke, lw = 6) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.lineWidth = lw; ctx.strokeStyle = stroke; ctx.stroke(); }
+}
+function circ(ctx, x, y, r, fill, stroke, lw = 6) {
+  ctx.beginPath(); ctx.arc(x, y, Math.max(0, r), 0, Math.PI * 2);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.lineWidth = lw; ctx.strokeStyle = stroke; ctx.stroke(); }
+}
+function ell(ctx, x, y, rx, ry, fill, stroke, lw = 6, rot = 0) {
+  ctx.beginPath(); ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.lineWidth = lw; ctx.strokeStyle = stroke; ctx.stroke(); }
+}
+function field(ctx, col) { ctx.fillStyle = col; ctx.fillRect(-80, -80, W + 160, H + 160); }
+// flat drop shadow + card
+function card(ctx, x, y, w, h, fill, o = {}) {
+  ctx.fillStyle = o.shadow || K.ink; ctx.fillRect(x + (o.off ?? 14), y + (o.off ?? 14), w, h);
+  ctx.fillStyle = fill; ctx.fillRect(x, y, w, h);
+  if (o.stroke !== false) { ctx.lineWidth = o.lw || 6; ctx.strokeStyle = K.ink; ctx.strokeRect(x, y, w, h); }
+}
+
+/* ================= halftone ================= */
+const patCache = {};
+function dots(ctx, col, cell = 12, rf = .3, ang = 15) {
+  const key = col + cell + rf;
+  if (!patCache[key]) {
+    const c = cnv(cell, cell), g = c.getContext('2d');
+    g.fillStyle = col; g.beginPath(); g.arc(cell / 2, cell / 2, cell * rf, 0, 7); g.fill();
+    patCache[key] = ctx.createPattern(c, 'repeat');
+  }
+  const p = patCache[key]; p.setTransform(new DOMMatrix().rotateSelf(ang)); return p;
+}
+// dot field whose size follows f(x,y) in 0..1 (grid rotated 15°)
+function dotGrad(ctx, col, cell, f, mul = true) {
+  ctx.save(); if (mul) ctx.globalCompositeOperation = 'multiply';
+  ctx.beginPath();
+  const ca = Math.cos(.26), sa = Math.sin(.26);
+  for (let j = -30; j < H / cell + 30; j++) for (let i = -30; i < W / cell + 30; i++) {
+    const gx = i * cell, gy = j * cell, x = gx * ca - gy * sa, y = gx * sa + gy * ca;
+    if (x < -cell || x > W + cell || y < -cell || y > H + cell) continue;
+    const v = f(x, y); if (v <= .03) continue;
+    const r = cell * .66 * Math.sqrt(Math.min(1, v)); ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 6.2832);
+  }
+  ctx.fillStyle = col; ctx.fill(); ctx.restore();
+}
+const radial = (cx, cy, R, p = 1) => (x, y) => Math.pow(clamp(1 - Math.hypot(x - cx, y - cy) / R), p);
+
+/* ================= textures (built once) ================= */
+let fiberTex, specks = [], grains = [], stampCache = {}, wornTex;
+function makeTextures() {
+  let s = 7; const R = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  fiberTex = cnv(W, H); let g = fiberTex.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 70; i++) {
+    const x = R() * W, y = R() * H, r = 120 + R() * 460, a = .03 + R() * .05;
+    const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(150,125,85,${a})`); gr.addColorStop(1, 'rgba(150,125,85,0)');
+    g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r);
+  }
+  g.lineCap = 'round';
+  for (let i = 0; i < 3200; i++) {
+    const x = R() * W, y = R() * H, l = 4 + R() * 18, a = R() * Math.PI;
+    g.strokeStyle = `rgba(110,95,70,${.05 + R() * .08})`; g.lineWidth = .6 + R() * .9;
+    g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + Math.cos(a + .5) * l * .5, y + Math.sin(a + .5) * l * .5, x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+  }
+  // fold creases: this is a folded case file
+  for (const [x0, y0, x1, y1] of [[W * .5, 0, W * .5 + 6, H], [0, H * .5, W, H * .5 - 4]]) {
+    g.strokeStyle = 'rgba(120,105,80,.16)'; g.lineWidth = 3; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+    g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x0 + 3, y0 + 3); g.lineTo(x1 + 3, y1 + 3); g.stroke();
+  }
+  let id = g.getImageData(0, 0, W, H), d = id.data;
+  for (let i = 0; i < d.length; i += 4) { const n = (R() - .5) * 16; d[i] += n; d[i + 1] += n; d[i + 2] += n; }
+  g.putImageData(id, 0, 0);
+  // ink dropout specks (visible on solid ink, invisible on paper)
+  for (let k = 0; k < 3; k++) {
+    const c = cnv(W, H), q = c.getContext('2d'); q.fillStyle = 'rgba(243,238,226,.55)';
+    for (let i = 0; i < 9000; i++) { const r = R() < .9 ? .6 + R() * 1.2 : 1.5 + R() * 2.5; q.beginPath(); q.arc(R() * W, R() * H, r, 0, 7); q.fill(); }
+    specks.push(c);
+  }
+  for (let k = 0; k < 4; k++) {
+    const c = cnv(W / 2, H / 2), q = c.getContext('2d'), im = q.createImageData(W / 2, H / 2), dd = im.data;
+    for (let i = 0; i < dd.length; i += 4) { const v = 128 + (R() - .5) * 150; dd[i] = dd[i + 1] = dd[i + 2] = v; dd[i + 3] = 255; }
+    q.putImageData(im, 0, 0); grains.push(c);
+  }
+  // worn mask for rubber stamps
+  wornTex = cnv(1600, 800); g = wornTex.getContext('2d');
+  for (let i = 0; i < 5200; i++) { g.fillStyle = `rgba(0,0,0,${.3 + R() * .7})`; g.beginPath(); g.arc(R() * 1600, R() * 800, .8 + R() * (R() < .95 ? 2.4 : 9), 0, 7); g.fill(); }
+  for (let i = 0; i < 40; i++) { g.strokeStyle = 'rgba(0,0,0,.6)'; g.lineWidth = 1 + R() * 3; const y = R() * 800; g.beginPath(); g.moveTo(R() * 1600, y); g.lineTo(R() * 1600, y + (R() - .5) * 40); g.stroke(); }
+}
+
+/* ================= rubber stamp ================= */
+function stampTex(s, size, col, f = FD) {
+  const key = s + size + col;
+  if (stampCache[key]) return stampCache[key];
+  const probe = cnv(10, 10).getContext('2d'); probe.font = font(size, f); const w = probe.measureText(s).width + size * .9, h = size * 1.45;
+  const c = cnv(Math.ceil(w + 40), Math.ceil(h + 40)), g = c.getContext('2d');
+  g.translate(20, 20); g.strokeStyle = col; g.fillStyle = col;
+  g.lineWidth = size * .075; g.beginPath(); g.roundRect(0, 0, w, h, size * .08); g.stroke();
+  g.lineWidth = size * .025; g.beginPath(); g.roundRect(size * .12, size * .12, w - size * .24, h - size * .24, size * .04); g.stroke();
+  g.font = font(size, f); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(s, w / 2, h / 2 + size * .04);
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'destination-out';
+  g.drawImage(wornTex, (hash(size) * 400) | 0, 0, c.width, c.height, 0, 0, c.width, c.height);
+  return (stampCache[key] = c);
+}
+function stamp(ctx, s, x, y, size, col, k, rot = -.08, f = FD, mul = true) {
+  if (k <= 0) return;
+  const c = stampTex(s, size, col, f), sc = lerp(2.4, 1, eIn(clamp(k)));
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(sc, sc);
+  ctx.globalAlpha *= lerp(.1, .95, clamp(k)); if (mul) ctx.globalCompositeOperation = 'multiply';
+  ctx.drawImage(c, -c.width / 2, -c.height / 2); ctx.restore();
+}
+
+/* ================= characters ================= */
+// the suspect: curly hair, round glasses, pleased with himself
+function head(ctx, x, y, s, o = {}) {
+  const t = o.t || 0;
+  ctx.save(); ctx.translate(x, y); ctx.scale(s * (o.flip ? -1 : 1), s); if (o.rot) ctx.rotate(o.rot);
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ell(ctx, -120, 14, 24, 34, K.skin, K.ink, 7); ell(ctx, 120, 14, 24, 34, K.skin, K.ink, 7);
+  ell(ctx, 0, 0, 118, 140, K.skin, K.ink, 8);
+  // cheek shading, red halftone
+  ctx.save(); ctx.beginPath(); ctx.ellipse(0, 0, 114, 136, 0, 0, 7); ctx.clip();
+  ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = dots(ctx, K.red, 11, .28); ctx.fillRect(30, -20, 120, 180); ctx.restore();
+  // curls: blue plate printed slightly off-register under the black plate
+  const curls = [];
+  for (let i = 0; i < 17; i++) { const a = Math.PI * (1.0 + i / 16), wob = o.windy ? Math.sin(t * 24 + i) * 7 - 8 : 0; curls.push([Math.cos(a) * 118 + wob, Math.sin(a) * 128 - 34, 40 + (i % 3) * 6]); }
+  for (let i = 0; i < 9; i++) curls.push([-88 + i * 22, -142 + (i % 2) * 14, 38]);
+  for (let i = 0; i < 5; i++) curls.push([-60 + i * 30, -104 + (i % 2) * 8, 30]);
+  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = K.blue;
+  ctx.beginPath(); for (const [cx, cy, r] of curls) { ctx.moveTo(cx + 7 + r, cy + 6); ctx.arc(cx + 7, cy + 6, r, 0, 7); } ctx.fill(); ctx.restore();
+  ctx.fillStyle = K.ink; ctx.beginPath(); for (const [cx, cy, r] of curls) { ctx.moveTo(cx + r, cy); ctx.arc(cx, cy, r, 0, 7); } ctx.fill();
+  ctx.strokeStyle = K.paper; ctx.lineWidth = 3; ctx.globalAlpha = .45;
+  for (let i = 0; i < curls.length; i += 2) { const [cx, cy, r] = curls[i]; ctx.beginPath(); ctx.arc(cx - r * .15, cy - r * .1, r * .5, 3.6, 5.2); ctx.stroke(); }
+  ctx.globalAlpha = 1;
+  // brows
+  const b = o.brow || 0; ctx.strokeStyle = K.ink; ctx.lineWidth = 11;
+  ctx.beginPath(); ctx.moveTo(-100, -58 - b * 8); ctx.lineTo(-30, -52 + b * 6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(100, -58 - b * 8); ctx.lineTo(30, -52 + b * 6); ctx.stroke();
+  // eyes + round glasses
+  const lk = (o.look || 0) * 12;
+  const blink = (hash(Math.floor(t * 2.5) + 3) > .85 && (t * 2.5 % 1) < .2);
+  if (blink || o.smug) { ctx.lineWidth = 7; for (const ex of [-62, 62]) { ctx.beginPath(); ctx.moveTo(ex - 18 + lk, -8); ctx.quadraticCurveTo(ex + lk, o.smug ? -2 : -8, ex + 18 + lk, -8); ctx.stroke(); } }
+  else { circ(ctx, -62 + lk, -6, 10, K.ink); circ(ctx, 62 + lk, -6, 10, K.ink); }
+  ctx.lineWidth = 8; ctx.strokeStyle = K.ink;
+  for (const ex of [-62, 62]) { ctx.beginPath(); ctx.roundRect(ex - 46, -44, 92, 76, 30); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(-16, -12); ctx.quadraticCurveTo(0, -22, 16, -12); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-108, -10); ctx.lineTo(-120, -2); ctx.moveTo(108, -10); ctx.lineTo(120, -2); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 5; for (const ex of [-62, 62]) { ctx.beginPath(); ctx.moveTo(ex + 14, -32); ctx.lineTo(ex + 30, -16); ctx.stroke(); }
+  // nose + mouth
+  ctx.strokeStyle = K.ink; ctx.lineWidth = 7;
+  ctx.beginPath(); ctx.moveTo(4, 8); ctx.quadraticCurveTo(-16, 44, 8, 48); ctx.stroke();
+  const m = o.mouth || 'smirk';
+  ctx.lineWidth = 8;
+  if (m === 'smirk') { ctx.beginPath(); ctx.moveTo(-36, 84); ctx.quadraticCurveTo(10, 100, 44, 70); ctx.stroke(); }
+  else if (m === 'o') { ell(ctx, 0, 88, 20, 26, K.ink); }
+  else if (m === 'grin') { ctx.beginPath(); ctx.moveTo(-46, 74); ctx.quadraticCurveTo(0, 124, 46, 74); ctx.closePath(); ctx.fillStyle = K.white; ctx.fill(); ctx.stroke(); }
+  else { ctx.beginPath(); ctx.moveTo(-30, 84); ctx.lineTo(30, 84); ctx.stroke(); }
+  ctx.restore();
+}
+function bust(ctx, x, y, s, o = {}) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.lineJoin = 'round';
+  // jacket
+  ctx.beginPath(); ctx.moveTo(-380, 60); ctx.bezierCurveTo(-370, -150, -300, -230, -120, -250); ctx.lineTo(120, -250); ctx.bezierCurveTo(300, -230, 370, -150, 380, 60); ctx.closePath();
+  ctx.fillStyle = K.blue; ctx.fill();
+  ctx.save(); ctx.clip(); ctx.fillStyle = dots(ctx, K.ink, 12, .34); ctx.fillRect(80, -260, 320, 330); ctx.restore();
+  ctx.lineWidth = 8; ctx.strokeStyle = K.ink; ctx.stroke();
+  // open collar, no tie
+  ctx.beginPath(); ctx.moveTo(-120, -250); ctx.lineTo(0, -60); ctx.lineTo(120, -250); ctx.closePath(); ctx.fillStyle = K.white; ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-60, -250); ctx.lineTo(0, -150); ctx.lineTo(60, -250); ctx.closePath(); ctx.fillStyle = K.skin; ctx.fill(); ctx.stroke();
+  rr(ctx, -52, -330, 104, 100, 20, K.skin, K.ink, 8);
+  ctx.restore();
+  head(ctx, x, y - 460 * s, s, o);
+}
+function person(ctx, x, y, s, o = {}) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s * (o.flip ? -1 : 1), s);
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  const sw = o.walk != null ? Math.sin(o.walk) * .5 : 0, bob = o.walk != null ? -Math.abs(Math.cos(o.walk)) * 10 : 0;
+  ctx.translate(0, bob);
+  for (const [hx, a] of [[-26, sw], [26, -sw]]) {
+    const fx = hx + Math.sin(a) * 170, fy = -170 + Math.cos(a) * 170;
+    ctx.strokeStyle = K.ink; ctx.lineWidth = 28; ctx.beginPath(); ctx.moveTo(hx, -170); ctx.lineTo(fx, fy); ctx.stroke();
+    ell(ctx, fx + 14, fy - 4, 30, 14, K.ink);
+  }
+  const arm = (sx, ang) => {
+    const hx = sx + Math.sin(ang) * 140, hy = -330 + Math.cos(ang) * 140;
+    ctx.strokeStyle = K.ink; ctx.lineWidth = 30; ctx.beginPath(); ctx.moveTo(sx, -330); ctx.lineTo(hx, hy); ctx.stroke();
+    ctx.strokeStyle = K.blue; ctx.lineWidth = 18; ctx.stroke();
+    circ(ctx, hx, hy, 18, K.skin, K.ink, 6); return [hx, hy];
+  };
+  const back = arm(-66, o.sign ? -sw * .6 : -sw * .8);
+  rr(ctx, -80, -360, 160, 210, [44, 44, 18, 18], K.blue, K.ink, 8);
+  ctx.save(); ctx.beginPath(); ctx.roundRect(-80, -360, 160, 210, [44, 44, 18, 18]); ctx.clip(); ctx.fillStyle = dots(ctx, K.ink, 11, .32); ctx.fillRect(25, -360, 60, 210); ctx.restore();
+  ctx.beginPath(); ctx.moveTo(-34, -360); ctx.lineTo(0, -290); ctx.lineTo(34, -360); ctx.closePath(); ctx.fillStyle = K.white; ctx.fill(); ctx.lineWidth = 6; ctx.strokeStyle = K.ink; ctx.stroke();
+  if (o.sign) {
+    const [hx, hy] = arm(66, 2.75);
+    ctx.fillStyle = K.wood; ctx.fillRect(hx - 7, hy - 240, 14, 250); ctx.lineWidth = 4; ctx.strokeRect(hx - 7, hy - 240, 14, 250);
+    ctx.save(); ctx.translate(hx, hy - 290); ctx.rotate(Math.sin((o.walk || 0) * .5) * .05);
+    card(ctx, -170, -60, 340, 120, K.white, { off: 8, lw: 6 });
+    if (o.flip) ctx.scale(-1, 1);
+    text(ctx, o.sign, 0, 2, { size: 58, color: K.red, font: FS });
+    ctx.restore();
+  } else arm(66, sw * .8);
+  head(ctx, 0, -470, .62, o.head || {});
+  ctx.restore();
+}
+function worker(ctx, x, y, s, col, t, i) {
+  ctx.save(); ctx.translate(x, y + Math.sin(t * 7 + i) * 3); ctx.scale(s, s); ctx.lineJoin = 'round';
+  rr(ctx, -52, -40, 104, 120, [30, 30, 8, 8], col, K.ink, 6);
+  ctx.beginPath(); ctx.moveTo(0, -38); ctx.lineTo(-12, 10); ctx.lineTo(0, 36); ctx.lineTo(12, 10); ctx.closePath(); ctx.fillStyle = K.ink; ctx.fill();
+  circ(ctx, 0, -88, 44, K.skin, K.ink, 6);
+  ctx.beginPath(); ctx.arc(0, -96, 44, Math.PI * 1.05, Math.PI * 1.95); ctx.fillStyle = K.ink; ctx.fill();
+  circ(ctx, -15, -84, 5, K.ink); circ(ctx, 15, -84, 5, K.ink);
+  ctx.beginPath(); ctx.arc(0, -72, 12, .3, Math.PI - .3); ctx.lineWidth = 4; ctx.strokeStyle = K.ink; ctx.stroke();
+  ctx.restore();
+}
+function poof(ctx, x, y, k) {
+  if (k <= 0 || k >= 1) return;
+  for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283, d = eOut(k) * 90; circ(ctx, x + Math.cos(a) * d, y + Math.sin(a) * d, 30 * (1 - k), K.paper, K.ink, 4); }
+}
+function claudeSpark(ctx, x, y, r, t, o = {}) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(t * 2.5) * .05);
+  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.translate(6, 5); ctx.fillStyle = K.red;
+  for (let i = 0; i < 11; i++) { ctx.save(); ctx.rotate(i / 11 * 6.283 + .2); ctx.beginPath(); ctx.roundRect(-r * .1, 0, r * .2, r * (.92 + .1 * Math.sin(i * 2.3)), r * .1); ctx.fill(); ctx.restore(); }
+  ctx.restore();
+  ctx.fillStyle = K.claude;
+  for (let i = 0; i < 11; i++) { ctx.save(); ctx.rotate(i / 11 * 6.283 + .2); ctx.beginPath(); ctx.roundRect(-r * .1, 0, r * .2, r * (.92 + .1 * Math.sin(i * 2.3)), r * .1); ctx.fill(); ctx.restore(); }
+  circ(ctx, 0, 0, r * .46, K.claude);
+  circ(ctx, -r * .16, -r * .06, r * .065, K.ink); circ(ctx, r * .16, -r * .06, r * .065, K.ink);
+  ctx.beginPath(); ctx.lineWidth = r * .045; ctx.strokeStyle = K.ink; ctx.lineCap = 'round';
+  if (o.sweat) { ctx.moveTo(-r * .13, r * .2); ctx.quadraticCurveTo(0, r * .1, r * .13, r * .2); } else { ctx.moveTo(-r * .13, r * .14); ctx.quadraticCurveTo(0, r * .24, r * .13, r * .14); }
+  ctx.stroke();
+  if (o.sweat) {
+    const sy = -r * .35 + (t * 70 % 40);
+    ctx.beginPath(); ctx.moveTo(r * .5, sy - 26); ctx.quadraticCurveTo(r * .5 + 20, sy + 6, r * .5, sy + 14); ctx.quadraticCurveTo(r * .5 - 20, sy + 6, r * .5, sy - 26);
+    ctx.fillStyle = '#8CC8FF'; ctx.fill(); ctx.lineWidth = 4; ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/* ================= props ================= */
+function flame(ctx, x, y, s, t, seed = 0) {
+  const f = 1 + .16 * Math.sin(t * 31 + seed * 5) + .08 * Math.sin(t * 53 + seed);
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s * f); ctx.rotate(Math.sin(t * 17 + seed) * .06);
+  const tear = (w, h) => { ctx.beginPath(); ctx.moveTo(0, 0); ctx.bezierCurveTo(-w, -h * .1, -w * .9, -h * .55, 0, -h); ctx.bezierCurveTo(w * .9, -h * .55, w, -h * .1, 0, 0); };
+  tear(40, 110 + 10 * Math.sin(t * 23 + seed)); ctx.fillStyle = K.red; ctx.fill(); ctx.lineWidth = 5; ctx.strokeStyle = K.ink; ctx.stroke();
+  tear(24, 70); ctx.fillStyle = K.yellow; ctx.fill();
+  tear(10, 30); ctx.fillStyle = K.white; ctx.fill();
+  ctx.restore();
+}
+function match(ctx, x, y, len, ang, lit, t, seed = 0) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+  rr(ctx, 0, -11, len, 22, 4, K.wood, K.ink, 5);
+  ell(ctx, len + 10, 0, 30, 22, K.red, K.ink, 5);
+  ctx.restore();
+  if (lit > 0) { const hx = x + Math.cos(ang) * (len + 14), hy = y + Math.sin(ang) * (len + 14); flame(ctx, hx, hy + 6, lit, t, seed); }
+}
+function matchLabel(ctx, t, o = {}) {
+  const w = 1100, h = 640, x = -w / 2, y = -h / 2;
+  if (!o.noShadow) { ctx.fillStyle = K.ink; ctx.fillRect(x + 18, y + 18, w, h); }
+  ctx.fillStyle = K.yellow; ctx.fillRect(x, y, w, h);
+  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = dots(ctx, K.red, 14, .16, 45); ctx.fillRect(x, y, w, h); ctx.restore();
+  ctx.strokeStyle = K.red; ctx.lineWidth = 12; ctx.strokeRect(x + 22, y + 22, w - 44, h - 44);
+  ctx.lineWidth = 3; ctx.strokeRect(x + 42, y + 42, w - 84, h - 84);
+  for (const [cx, cy] of [[x + 22, y + 22], [x + w - 22, y + 22], [x + 22, y + h - 22], [x + w - 22, y + h - 22]]) { ctx.fillStyle = K.ink; ctx.fillRect(cx - 22, cy - 22, 44, 44); text(ctx, '★', cx, cy + 2, { size: 30, color: K.yellow }); }
+  // top band
+  ctx.fillStyle = K.red; ctx.fillRect(x + 64, y + 64, w - 128, 118);
+  text(ctx, '安全火柴', 0, y + 124, { size: 92, font: FS, color: K.white, ls: 48 });
+  // emblem
+  ctx.save(); ctx.translate(0, 26); ctx.beginPath(); ctx.arc(0, 0, 150, 0, 7); ctx.clip();
+  ctx.fillStyle = K.white; ctx.fillRect(-160, -160, 320, 320);
+  ctx.rotate(t * .4); ctx.fillStyle = K.red; for (let i = 0; i < 16; i++) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 200, i / 16 * 6.283, (i + .5) / 16 * 6.283); ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+  circ(ctx, 0, 26, 150, null, K.ink, 7); circ(ctx, 0, 26, 92, K.blue, K.ink, 6);
+  match(ctx, -84, 96, 150, -.95, o.lit ?? .7, t, 3);
+  // vertical slogans
+  ['预', '防', '火', '灾'].forEach((c, i) => text(ctx, c, -400, -80 + i * 70, { size: 60, font: FS }));
+  ['由', '我', '点', '火'].forEach((c, i) => text(ctx, c, 400, -80 + i * 70, { size: 60, font: FS, color: i === 1 ? K.red : K.ink }));
+  // bottom band
+  ctx.fillStyle = K.ink; ctx.fillRect(x + 64, h / 2 - 150, w - 128, 90);
+  text(ctx, 'ANTHROPIC · SAFETY MATCHES · 2021', 0, h / 2 - 122, { size: 30, font: FM, weight: 700, color: K.yellow, ls: 4 });
+  text(ctx, '注意：火，须由本厂负责点。', 0, h / 2 - 82, { size: 26, color: K.paper, weight: 500 });
+}
+function chip(ctx, x, y, s, rot) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(s, s);
+  ctx.fillStyle = '#B99B55'; for (let i = -2; i <= 2; i++) { ctx.fillRect(i * 16 - 3, -60, 6, 18); ctx.fillRect(i * 16 - 3, 42, 6, 18); ctx.fillRect(-60, i * 16 - 3, 18, 6); ctx.fillRect(42, i * 16 - 3, 18, 6); }
+  rr(ctx, -46, -46, 92, 92, 10, K.dark, K.ink, 5); rr(ctx, -28, -28, 56, 56, 6, K.blue);
+  text(ctx, 'GPU', 0, 2, { size: 20, font: FM, weight: 700, color: K.yellow });
+  ctx.restore();
+}
+function building(ctx, x, y, s, rot) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(s, s);
+  rr(ctx, -70, -150, 140, 190, 4, K.paper2, K.ink, 6);
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 2; c++) rr(ctx, -48 + c * 56, -128 + r * 50, 40, 32, 3, K.blue, K.ink, 3);
+  ctx.fillStyle = K.red; ctx.fillRect(-70, -176, 140, 26); ctx.lineWidth = 5; ctx.strokeStyle = K.ink; ctx.strokeRect(-70, -176, 140, 26);
+  text(ctx, '中资', 0, -162, { size: 20, color: K.white });
+  ctx.restore();
+}
+function globe(ctx, x, y, r, t, crossed) {
+  ctx.save(); ctx.translate(x, y);
+  circ(ctx, 14, 16, r, K.ink);
+  circ(ctx, 0, 0, r, K.blue);
+  ctx.save(); ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.clip();
+  ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = dots(ctx, K.ink, 12, .25); ctx.fillRect(0, -r, r, 2 * r);
+  const off = (t * 50) % (r * 4);
+  for (let i = 0; i < 8; i++) {
+    const cx = -r * 2 + ((hash(i) * r * 4 + off) % (r * 4)), cy = (hash(i + 5) - .5) * r * 1.4;
+    ctx.globalCompositeOperation = 'source-over'; ell(ctx, cx, cy, 40 + hash(i + 2) * 90, 30 + hash(i + 3) * 55, K.yellow, null, 0, hash(i) * 3);
+  }
+  ctx.restore();
+  circ(ctx, 0, 0, r, null, K.ink, 8);
+  for (let i = 0; i < 16; i++) {
+    const a = i / 16 * 6.283 + t * .25, px = Math.cos(a) * (r + 46), py = Math.sin(a) * (r + 46), out = crossed && crossed(i);
+    circ(ctx, px, py, 24, out ? K.paper2 : K.skin, out ? K.grey : K.ink, 5);
+    if (out) { ctx.strokeStyle = K.red; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(px - 18, py - 18); ctx.lineTo(px + 18, py + 18); ctx.moveTo(px + 18, py - 18); ctx.lineTo(px - 18, py + 18); ctx.stroke(); }
+  }
+  ctx.restore();
+}
+
+/* ================= captions + HUD ================= */
+function caption(ctx, u, t0, t1, segs, o = {}) {
+  if (u < t0 || u > t1) return;
+  const size = o.size || 52, pad = 40;
+  const w = segs.reduce((a, [s]) => a + tw(ctx, s, size), 0) + pad * 2 + 14, h = size + 40;
+  const x = (o.x ?? W / 2) - w / 2, y = (o.y ?? 972) - h / 2;
+  const kin = eOut(P(u, t0, t0 + .14)), kout = eIn(P(u, t1 - .1, t1));
+  ctx.save(); ctx.beginPath(); ctx.rect(x - 20 + (w + 40) * kout, y - 20, (w + 40) * (kin - kout), h + 40); ctx.clip();
+  ctx.fillStyle = K.ink; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = K.red; ctx.fillRect(x, y, 14, h);
+  rich(ctx, segs.map(([s, c]) => [s, c || K.paper]), x + 14 + pad, y + h / 2 + 2, size);
+  ctx.restore();
+}
+
+/* ================= SCENES ================= */
+function sTitle(ctx, u, d, t) {
+  const cards = [['为什么', K.paper, K.ink, K.red, FS, 400], ['DARIO', K.red, K.paper, K.ink, FA, 600], ['AMODEI', K.blue, K.paper, K.ink, FA, 560], ['是个', K.yellow, K.ink, K.red, FS, 460]];
+  if (u < BAR) {
+    const i = Math.min(3, Math.floor(u / BT)), ui = u - i * BT, [s, bg, fg, sh, f, sz] = cards[i];
+    field(ctx, bg);
+    dotGrad(ctx, sh, 22, radial(i % 2 ? 1700 : 220, i < 2 ? 950 : 130, 1100, 1.4));
+    const sc = slamS(ui, 0, 1.4, .09) * (1 + ui * .06);
+    ctx.save(); ctx.translate(W / 2, H / 2 + 20); ctx.scale(sc, sc);
+    text(ctx, s, 14, 14, { size: sz, font: f, color: sh, mul: true });
+    text(ctx, s, 0, 0, { size: sz, font: f, color: fg });
+    ctx.restore();
+    text(ctx, `证词 ${i + 1}/4`, 70, 1010, { size: 26, font: FM, weight: 700, align: 'left', color: fg });
+    return;
+  }
+  const uc = u - BAR;
+  field(ctx, K.paper);
+  dotGrad(ctx, K.yellow, 20, radial(1900, 1100, 1300, 1.2));
+  dotGrad(ctx, K.blue, 20, radial(0, 0, 700, 1.6));
+  const sl = i => eOut(P(uc, i * .05, i * .05 + .22));
+  text(ctx, '为什么', lerp(-300, 150, sl(0)), 170, { size: 130, font: FS, align: 'left' });
+  ctx.save(); ctx.translate(lerp(W, 0, sl(1)), 0);
+  text(ctx, 'DARIO AMODEI', 150, 450, { size: 270, font: FA, align: 'left', color: K.ink, shadow: K.red, sx: 12, sy: 10 });
+  ctx.restore();
+  text(ctx, '是个', lerp(-300, 150, sl(2)), 690, { size: 130, font: FS, align: 'left' });
+  stamp(ctx, '大傻逼', 1310, 690, 240, K.red, P(uc, BT, BT + .11), -.1);
+  typewriter(ctx, '—— 一份有据可查的起诉书 · 罪状共 3 项', 150, 880, uc, 1.0, 1.55, { size: 44 });
+  if (uc > 1.5) text(ctx, '* 所有引语均来自公开发言，出处见片尾', 150, 945, { size: 28, weight: 500, align: 'left', color: K.grey, alpha: P(uc, 1.5, 1.65) });
+}
+
+function sMug(ctx, u, d, t) {
+  field(ctx, K.paper2);
+  ctx.strokeStyle = K.ink;
+  for (let i = 0; i <= 12; i++) {
+    const y = 160 + i * 62; ctx.globalAlpha = .55; ctx.lineWidth = i % 2 ? 2 : 5;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); ctx.globalAlpha = 1;
+    if (i % 2 === 0) { text(ctx, String(200 - i * 5), 70, y - 22, { size: 26, font: FM, weight: 700, align: 'left' }); text(ctx, String(200 - i * 5), W - 70, y - 22, { size: 26, font: FM, weight: 700, align: 'right' }); }
+  }
+  dotGrad(ctx, K.blue, 18, radial(960, 560, 620, 1.1));
+  const second = u >= 2 * BT;
+  bust(ctx, 960 + (second ? 20 : 0), 1130, 1.08, { t, look: second ? -1 : 0, mouth: second ? 'smirk' : 'flat', brow: second ? 1 : 0 });
+  // placard
+  ctx.save(); ctx.translate(960, 930); ctx.rotate(-.01);
+  card(ctx, -330, -120, 660, 230, K.dark, { off: 10, lw: 6 });
+  text(ctx, 'AMODEI, D.', -290, -58, { size: 76, font: FA, color: K.paper, align: 'left' });
+  text(ctx, '案号 2026-DA-001', -290, 22, { size: 32, font: FM, weight: 700, color: K.paper, align: 'left' });
+  text(ctx, '罪名：言行不一', -290, 72, { size: 38, color: K.yellow, align: 'left' });
+  ctx.restore();
+  // side notes (typed after the second shutter)
+  const rows = [['姓名', 'Dario Amodei'], ['职业', 'Anthropic CEO'], ['口头禅', '“安全”']];
+  rows.forEach(([a, b], i) => {
+    const k = eOut(P(u, 2 * BT + .08 + i * .1, 2 * BT + .3 + i * .1)); if (k <= 0) return;
+    ctx.save(); ctx.globalAlpha = k; ctx.translate((1 - k) * 60, 0);
+    text(ctx, a, 1400, 330 + i * 130, { size: 26, font: FM, weight: 700, align: 'left', color: K.grey });
+    text(ctx, b, 1400, 378 + i * 130, { size: 48, font: FS, align: 'left', color: i === 2 ? K.red : K.ink });
+    ctx.restore();
+  });
+  text(ctx, second ? '侧面 · PROFILE' : '正面 · FRONT', 120, 330, { size: 30, font: FM, weight: 700, align: 'left' });
+  // flash
+  const fl = Math.max(1 - P(u, 0, .16), second ? 1 - P(u, 2 * BT, 2 * BT + .16) : 0);
+  if (fl > 0) { ctx.fillStyle = `rgba(255,253,246,${fl * .95})`; ctx.fillRect(-80, -80, W + 160, H + 160); }
+}
+
+const CH = [null,
+  ['纵火的消防员', K.red, K.paper, K.ink],
+  ['先卖焦虑，再卖订阅', K.yellow, K.ink, K.red],
+  ['“全人类”', K.dark, K.paper, K.red]];
+const sCard = n => (ctx, u, d, t) => {
+  const [title, bg, fg, acc] = CH[n];
+  field(ctx, bg);
+  const sc = slamS(u, 0, 1.3, .12) * (1 + u * .04);
+  ctx.save(); ctx.translate(n === 2 ? 1520 : 1400, 580); ctx.scale(sc, sc);
+  ctx.font = font(860, FA); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = dots(ctx, acc, 16, .42, 30); ctx.fillText('0' + n, 0, 0);
+  ctx.lineWidth = 7; ctx.strokeStyle = acc; ctx.strokeText('0' + n, 0, 0);
+  ctx.restore();
+  const k = eOut(P(u, 0, .16));
+  text(ctx, '罪状', lerp(-200, 130, k), 380, { size: 190, font: FS, align: 'left', color: fg });
+  stagger(ctx, title, 130, 610, u, .1, { size: n === 2 ? 84 : 104, color: fg, step: .025 });
+  ctx.fillStyle = fg; ctx.fillRect(130, 730, 520 * eOut(P(u, .1, .4)), 6);
+  text(ctx, `COUNT 0${n} / 03`, 130, 790, { size: 30, font: FM, weight: 700, align: 'left', color: fg, alpha: P(u, .15, .3) });
+};
+
+function sExit(ctx, u, d, t) {
+  field(ctx, K.paper);
+  text(ctx, '2021', 40, 520, { size: 640, font: FA, align: 'left', color: K.yellow, mul: true });
+  const gy = 900;
+  // HQ facade
+  card(ctx, 1180, 150, 600, 760, K.paper2, { off: 16 });
+  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = dots(ctx, K.ink, 12, .18); ctx.fillRect(1180, 150, 600, 760); ctx.restore();
+  for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) rr(ctx, 1230 + c * 180, 330 + r * 110, 130, 76, 4, K.blue, K.ink, 5);
+  card(ctx, 1260, 190, 440, 100, K.ink, { off: 0 });
+  text(ctx, 'OpenAI', 1480, 242, { size: 70, color: K.paper });
+  ctx.fillStyle = K.dark; ctx.fillRect(1380, 590, 200, 310);
+  // the door: open while he leaves, then SLAM
+  const open = u < 2 * BT ? 1 : 1 - eIn(P(u, 2 * BT, 2 * BT + .07));
+  ctx.save(); ctx.translate(1580, 590); ctx.scale(-(1 - open * .82), 1);
+  rr(ctx, 0, 0, 200, 310, 2, K.red, K.ink, 7); circ(ctx, 170, 160, 9, K.yellow, K.ink, 4); ctx.restore();
+  ctx.lineWidth = 7; ctx.strokeStyle = K.ink; ctx.beginPath(); ctx.moveTo(-80, gy); ctx.lineTo(W + 80, gy); ctx.stroke();
+  const k = P(u, 0, 1.55), x = lerp(1480, 760, eIO(k));
+  person(ctx, x, gy + 4, .9, { walk: k > 0 && k < 1 ? u * 13 : null, flip: true, sign: '不够安全！', head: { t, mouth: 'flat', brow: -1 } });
+  if (u > 2 * BT) text(ctx, '砰！', 1690, 520, { size: 170, font: FD, color: K.red, rot: .14, scale: slamS(u, 2 * BT, 1.8, .08), stroke: K.ink, strokeW: 10 });
+  caption(ctx, u, .1, d, [['2021：', K.yellow], ['嫌 OpenAI 不够安全，愤而出走']]);
+}
+
+function sMatch(ctx, u, d, t) {
+  field(ctx, K.paper);
+  dotGrad(ctx, K.red, 20, radial(960, 500, 1000, 1.8));
+  if (u < BAR) {
+    ctx.save(); ctx.translate(960, 470); ctx.rotate(-.025); const s = slamS(u, 0, 1.25, .12); ctx.scale(s, s);
+    matchLabel(ctx, t, { lit: .7 }); ctx.restore();
+    caption(ctx, u, .12, BAR - .04, [['为了防止火灾，'], ['他开了一家火柴厂。', K.yellow]], { size: 60 });
+    return;
+  }
+  const ub = u - BAR, m = eIO(P(ub, 0, .28));
+  ctx.save(); ctx.translate(lerp(960, 520, m), lerp(470, 440, m)); ctx.rotate(-.025); ctx.scale(lerp(1, .64, m), lerp(1, .64, m));
+  matchLabel(ctx, t, { lit: .7 }); ctx.restore();
+  text(ctx, '他的逻辑：', 1060, 220, { size: 36, font: FM, weight: 700, align: 'left', color: K.blue, alpha: P(ub, .1, .25) });
+  stagger(ctx, '火这么危险，', 1060, 350, ub, .12, { size: 104 });
+  if (ub > BT) {
+    const s = slamS(ub, BT, 1.35, .09);
+    ctx.save(); ctx.translate(1060, 500); ctx.scale(s, s);
+    const segs = rich(ctx, [['所以得由', K.ink], ['我', K.red], ['来点。', K.ink]], 0, 0, 104, { font: FS });
+    ctx.restore();
+    if (ub > 2 * BT) { const [sx, sw] = segs[1]; marker(ctx, 1060 + sx - 8, 440, sw + 16, 120, eOut(P(ub, 2 * BT, 2 * BT + .2))); }
+  }
+  // strike the giant match
+  const strike = eOut(P(ub, 2 * BT - .12, 2 * BT));
+  const lit = ub > 2 * BT ? lerp(0, 1.9, eOut(P(ub, 2 * BT, 2 * BT + .25))) : 0;
+  match(ctx, lerp(1300, 1100, strike), 860, 520, -.08, lit, t, 7);
+  if (ub > 2 * BT - .12 && ub < 2 * BT + .15) { ctx.save(); ctx.globalAlpha = 1 - P(ub, 2 * BT, 2 * BT + .15); ctx.fillStyle = K.ink; for (let i = 0; i < 5; i++) ctx.fillRect(1580 + i * 30, 790 + i * 22, 180, 7); ctx.restore(); }
+}
+
+function sJobs(ctx, u, d, t) {
+  field(ctx, K.paper);
+  dotGrad(ctx, K.blue, 18, radial(1900, 0, 900, 1.3));
+  text(ctx, '2025.05 · AXIOS 采访', 120, 170, { size: 30, font: FM, weight: 700, align: 'left', color: K.blue });
+  stagger(ctx, '“1–5 年内，', 120, 280, u, 0, { size: 78 });
+  if (u > BT) text(ctx, '一半', 90, 560, { size: 330, font: FS, align: 'left', color: K.red, scale: slamS(u, BT, 1.3, .08), shadow: K.ink, sx: 10, sy: 10 });
+  stagger(ctx, '入门级白领工作', 800, 500, u, 1.5 * BT, { size: 74 });
+  stagger(ctx, '可能消失。”', 800, 610, u, 1.5 * BT + .15, { size: 74 });
+  const cols = [K.blue, K.yellow, K.red, K.paper2, K.blue];
+  const order = [1, 3, 6, 8, 4];
+  for (let i = 0; i < 10; i++) {
+    const x = 170 + i * 176, y = 920, oi = order.indexOf(i), tp = 2 * BT + oi * BT * .5;
+    if (oi >= 0 && u > tp) { poof(ctx, x, y - 40, P(u, tp, tp + .3)); if (u > tp + .25) { ctx.save(); ctx.setLineDash([10, 10]); rr(ctx, x - 48, y - 140, 96, 210, 24, null, K.grey, 4); ctx.restore(); } continue; }
+    worker(ctx, x, y, .82, cols[i % 5], t, i);
+  }
+}
+
+function sVal(ctx, u, d, t) {
+  field(ctx, K.paper);
+  text(ctx, 'Anthropic 估值', 120, 200, { size: 84, font: FS, align: 'left' });
+  text(ctx, '同一时期 · 入门级岗位 ↓', 120, 285, { size: 36, align: 'left', color: K.red });
+  for (let i = 0; i < 5; i++) worker(ctx, 150 + i * 120, 900, .55, [K.blue, K.yellow, K.red, K.paper2, K.blue][i], t, i);
+  ctx.save(); ctx.globalAlpha = .82; ctx.fillStyle = K.paper; ctx.fillRect(80, 780, 620, 180); ctx.restore();
+  const vals = [[615, '2025.03', '$615亿'], [1830, '2025.09', '$1830亿'], [3800, '2026.02', '$3800亿'], [9650, '2026.05', '$9650亿']];
+  const base = 940, bx = 800;
+  ctx.lineWidth = 7; ctx.strokeStyle = K.ink; ctx.beginPath(); ctx.moveTo(bx - 30, base); ctx.lineTo(W - 60, base); ctx.stroke();
+  vals.forEach(([v, dte, lab], i) => {
+    const g = eBack(P(u, i * BT, i * BT + .22)); if (g <= 0) return;
+    const h = v / 3800 * 560 * g, x = bx + i * 270, last = i === 3;
+    ctx.fillStyle = last ? K.red : K.blue; ctx.fillRect(x, base - h, 190, h);
+    ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = dots(ctx, K.ink, 12, .26); ctx.fillRect(x + 110, base - h, 80, h); ctx.restore();
+    ctx.lineWidth = 6; ctx.strokeRect(x, base - h, 190, h);
+    text(ctx, dte, x + 95, base + 36, { size: 28, font: FM, weight: 700, color: K.grey });
+    if (!last) text(ctx, lab, x + 95, base - h - 40, { size: 50, font: FA, scale: Math.min(1, g) });
+    else text(ctx, lab, x - 30, 250, { size: 110, font: FA, align: 'right', color: K.red, scale: slamS(u, 3 * BT, 1.4, .08) });
+  });
+}
+
+function sPrice(ctx, u, d, t) {
+  field(ctx, K.paper);
+  dotGrad(ctx, K.yellow, 20, radial(960, 420, 700, 1.1));
+  text(ctx, '先卖你', 140, 410, { size: 64, font: FS, align: 'left', alpha: P(u, 0, .08) });
+  if (u > 0) text(ctx, '焦虑', 120, 640, { size: 260, font: FS, align: 'left', color: K.blue, scale: slamS(u, 0, 1.35, .08), shadow: K.ink, sx: 9, sy: 9 });
+  if (u > 2 * BT) {
+    text(ctx, '再卖你', 1250, 410, { size: 64, font: FS, align: 'left' });
+    text(ctx, '订阅', 1230, 640, { size: 260, font: FS, align: 'left', color: K.red, scale: slamS(u, 2 * BT, 1.35, .08), shadow: K.ink, sx: 9, sy: 9 });
+  }
+  if (u > BT - .15) {
+    const k = P(u, BT - .15, d), sw = Math.sin(k * 16) * .3 * (1 - k), drop = eBack(P(u, BT - .15, BT + .1));
+    ctx.save(); ctx.translate(960, lerp(-500, 320, drop)); ctx.rotate(sw);
+    ctx.lineWidth = 5; ctx.strokeStyle = K.ink; ctx.beginPath(); ctx.moveTo(0, -600); ctx.lineTo(0, 0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(180, 70); ctx.lineTo(180, 520); ctx.lineTo(-180, 520); ctx.lineTo(-180, 70); ctx.closePath();
+    ctx.fillStyle = K.ink; ctx.save(); ctx.translate(14, 14); ctx.fill(); ctx.restore();
+    ctx.fillStyle = K.yellow; ctx.fill(); ctx.lineWidth = 7; ctx.stroke();
+    circ(ctx, 0, 70, 18, K.paper, K.ink, 5);
+    text(ctx, '解决方案', 0, 160, { size: 44, font: FS });
+    text(ctx, 'Claude Max', 0, 230, { size: 50, color: K.blue });
+    text(ctx, '$200', 0, 340, { size: 160, font: FA, color: K.red });
+    text(ctx, '/ 月', 0, 450, { size: 44, font: FS });
+    ctx.restore();
+  }
+}
+
+function sDS(ctx, u, d, t) {
+  field(ctx, K.paper);
+  ctx.fillStyle = K.ink; ctx.fillRect(120, 150, W - 240, 8); ctx.fillRect(120, 166, W - 240, 3);
+  text(ctx, '2025 年 1 月 20 日 · 头版', 120, 215, { size: 30, font: FM, weight: 700, align: 'left', color: K.blue });
+  const wipe = eOut(P(u, 0, .16));
+  ctx.save(); ctx.beginPath(); ctx.rect(100, 250, (W - 200) * wipe, 200); ctx.clip();
+  text(ctx, 'DeepSeek R1 发布', 110, 355, { size: 170, font: FS, align: 'left' }); ctx.restore();
+  stagger(ctx, '中国团队用少得多的算力，', 120, 520, u, .12, { size: 60, step: .015 });
+  const segs = [['做出了', K.ink], ['逼近美国顶尖水平', K.red], ['的模型。', K.ink]];
+  if (u > .3) {
+    const w0 = tw(ctx, '做出了', 60, FS), w1 = tw(ctx, '逼近美国顶尖水平', 60, FS);
+    marker(ctx, 120 + w0 - 6, 568, w1 + 12, 70, eOut(P(u, BT + .1, BT + .35)));
+    rich(ctx, segs, 120, 605, 60, { font: FS, alpha: P(u, .3, .4) });
+  }
+  ctx.fillStyle = K.ink; ctx.globalAlpha = .28;
+  for (let c = 0; c < 3; c++) for (let r = 0; r < 6; r++) ctx.fillRect(120 + c * 560, 690 + r * 36, 500 * (.7 + .3 * hash(c * 9 + r)), 12);
+  ctx.globalAlpha = 1;
+  if (u > 2 * BT) {
+    const v = u - 2 * BT;
+    for (let i = 0; i < 46; i++) {
+      const x = hash(i + 1) * W, y = -60 + v * (500 + hash(i) * 500);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(v * 5 + i); ctx.fillStyle = [K.red, K.yellow, K.blue, K.ink][i % 4]; ctx.fillRect(-12, -6, 24, 12); ctx.restore();
+    }
+    const s = slamS(u, 2 * BT, 1.6, .09);
+    ctx.save(); ctx.translate(1450, 860); ctx.rotate(.04); ctx.scale(s, s);
+    card(ctx, -330, -85, 660, 170, K.yellow, { off: 12 });
+    text(ctx, '全世界：哇。', 0, 4, { size: 104, font: FD, color: K.ink });
+    ctx.restore();
+  }
+}
+
+function sEssay(ctx, u, d, t) {
+  field(ctx, K.paper);
+  dotGrad(ctx, K.blue, 18, radial(300, 540, 800, 1.2));
+  const k = eOut(P(u, 0, .3));
+  ctx.save(); ctx.translate(lerp(-500, 440, k), 560); ctx.rotate(-.045);
+  card(ctx, -320, -400, 640, 800, K.white, { off: 16 });
+  text(ctx, 'On DeepSeek and', 0, -300, { size: 50, font: 'Georgia, serif', weight: 700 });
+  text(ctx, 'Export Controls', 0, -238, { size: 50, font: 'Georgia, serif', weight: 700, color: K.red });
+  text(ctx, 'DARIO AMODEI · 2025.01.29', 0, -175, { size: 24, font: FM, weight: 700, color: K.grey });
+  for (let i = 0; i < 13; i++) {
+    const w = 520 * (.62 + .38 * hash(i + 40)), y = -110 + i * 40;
+    if (i === 7) { ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = K.yellow; ctx.fillRect(-270, y - 10, 540, 32); ctx.restore(); ctx.fillStyle = K.red; }
+    else ctx.fillStyle = 'rgba(28,27,34,.4)';
+    ctx.fillRect(-260, y, w, 11);
+  }
+  ctx.restore();
+  text(ctx, '九天后，他发了篇长文：', 900, 250, { size: 36, font: FM, weight: 700, align: 'left', color: K.blue, alpha: P(u, .15, .3) });
+  stagger(ctx, '“DeepSeek 让出口管制', 900, 390, u, BT, { size: 86, step: .02 });
+  if (u > 2 * BT) {
+    const w0 = tw(ctx, '变得', 86, FS), w1 = tw(ctx, '更加生死攸关', 86, FS);
+    marker(ctx, 900 + w0 - 8, 460, w1 + 16, 100, eOut(P(u, 3 * BT, 3 * BT + .3)));
+    const s = slamS(u, 2 * BT, 1.25, .08);
+    ctx.save(); ctx.translate(900, 510); ctx.scale(s, s);
+    rich(ctx, [['变得', K.ink], ['更加生死攸关', K.red], ['。”', K.ink]], 0, 0, 86, { font: FS });
+    ctx.restore();
+  }
+  if (u > 3 * BT) text(ctx, '原文：“even more existentially important”', 900, 640, { size: 30, font: FM, weight: 500, align: 'left', color: K.grey, alpha: P(u, 3 * BT, 3 * BT + .2) });
+}
+
+function sWall(ctx, u, d, t) {
+  field(ctx, K.paper);
+  dotGrad(ctx, K.red, 18, radial(1650, 480, 520, 1.2));
+  const gy = 920, wx = 1030, ww = 220, wh = eOut(P(u, 0, .35)) * 740;
+  ctx.save(); ctx.beginPath(); ctx.rect(wx, gy - wh, ww, wh); ctx.clip();
+  for (let r = 0; r < 16; r++) for (let c = -1; c < 4; c++) rr(ctx, wx + c * 74 + (r % 2) * 37, gy - (r + 1) * 48, 72, 46, 3, K.red, K.ink, 4);
+  ctx.restore();
+  ctx.lineWidth = 7; ctx.strokeStyle = K.ink; ctx.strokeRect(wx, gy - wh, ww, wh);
+  if (wh > 600) ['出', '口', '管', '制'].forEach((c, i) => text(ctx, c, wx + ww / 2, 330 + i * 130, { size: 110, font: FS, color: K.white, stroke: K.ink, strokeW: 14 }));
+  text(ctx, '中国', 1640, 470, { size: 210, font: FS, alpha: P(u, .2, .35) });
+  text(ctx, 'CHINA', 1640, 620, { size: 34, font: FM, weight: 700, color: K.grey, alpha: P(u, .2, .35), ls: 10 });
+  for (let i = 0; i < 4; i++) {
+    const tt = u - (i + 1) * BT + .3; if (tt < 0) continue;
+    const hit = .3, y0 = 300 + i * 150;
+    const x = tt < hit ? lerp(-120, wx - 60, eIn(tt / hit)) : wx - 60 - (tt - hit) * 900;
+    const y = tt < hit ? y0 : y0 - (tt - hit) * 800 + (tt - hit) * (tt - hit) * 2200;
+    chip(ctx, x, y, 1, tt > hit ? -(tt - hit) * 14 : 0);
+    if (tt > hit && tt < hit + .15) text(ctx, '弹！', wx - 150, y0 - 60, { size: 60, font: FD, color: K.red, alpha: 1 - (tt - hit) / .15 });
+  }
+  caption(ctx, u, .45, d, [['他的答案：', K.yellow], ['让中国拿到的芯片，再少一点。']]);
+}
+
+function sToS(ctx, u, d, t) {
+  field(ctx, K.paper);
+  card(ctx, 90, 150, 960, 600, K.white, { off: 16 });
+  ctx.fillStyle = K.ink; ctx.fillRect(90, 150, 960, 70);
+  text(ctx, 'ANTHROPIC · 服务条款更新 · 2025.09', 130, 186, { size: 28, font: FM, weight: 700, align: 'left', color: K.paper });
+  stagger(ctx, '中资控股 > 50%：', 140, 320, u, .05, { size: 70, color: K.red, step: .02 });
+  if (u > BT) text(ctx, '一律不卖', 130, 500, { size: 200, font: FS, align: 'left', scale: slamS(u, BT, 1.3, .08) });
+  text(ctx, '（公司注册在海外也不行）', 140, 670, { size: 48, font: FS, align: 'left', alpha: P(u, 2 * BT, 2 * BT + .15) });
+  text(ctx, '官方理由：国家安全——担心中国法律可能强制企业交出数据', 100, 812, { size: 30, weight: 500, align: 'left', color: K.grey, alpha: P(u, 2 * BT, 2 * BT + .2) });
+  // the shop
+  const sx = 1200, sy = 250;
+  card(ctx, sx, sy + 90, 560, 560, K.paper2, { off: 14 });
+  for (let i = 0; i < 7; i++) { ctx.fillStyle = i % 2 ? K.white : K.claude; ctx.beginPath(); ctx.moveTo(sx - 20 + i * 86, sy + 90); ctx.lineTo(sx - 20 + (i + 1) * 86, sy + 90); ctx.lineTo(sx - 20 + (i + 1) * 86, sy + 150); ctx.arc(sx - 20 + i * 86 + 43, sy + 150, 43, 0, Math.PI); ctx.closePath(); ctx.fill(); ctx.lineWidth = 5; ctx.strokeStyle = K.ink; ctx.stroke(); }
+  card(ctx, sx + 80, sy - 10, 400, 90, K.ink, { off: 0 });
+  text(ctx, 'Claude', sx + 280, sy + 36, { size: 64, font: FS, color: K.paper });
+  rr(ctx, sx + 60, sy + 250, 220, 200, 6, '#BFD3FF', K.ink, 6);
+  claudeSpark(ctx, sx + 170, sy + 350, 70, t);
+  rr(ctx, sx + 330, sy + 250, 170, 400, 4, K.dark, K.ink, 6);
+  ctx.save(); ctx.translate(sx + 415, sy + 330); ctx.rotate(Math.sin(t * 3) * .08);
+  card(ctx, -80, 0, 160, 70, K.red, { off: 6, lw: 4 }); text(ctx, '不卖', 0, 36, { size: 40, color: K.white }); ctx.restore();
+  for (let i = 0; i < 3; i++) {
+    const tt = u - (BT + i * 2 * BT) + .35; if (tt < 0) continue;
+    const hit = .35, x = tt < hit ? lerp(2100, sx + 560, eOut(tt / hit)) : sx + 560 + (tt - hit) * 1500;
+    const y = 830 + (tt > hit ? -(tt - hit) * 1000 + (tt - hit) * (tt - hit) * 2600 : Math.sin(tt * 30) * 6);
+    building(ctx, x + 80, y, 1, tt > hit ? (tt - hit) * 8 : 0);
+  }
+  caption(ctx, u, BAR * .8, d, [['宁可自己'], ['少赚几亿美元', K.yellow], ['，也不卖给你。']], { size: 58 });
+}
+
+function sMission(ctx, u, d, t) {
+  field(ctx, K.paper);
+  dotGrad(ctx, K.yellow, 20, radial(1540, 520, 700, 1));
+  text(ctx, 'ANTHROPIC 的使命 · anthropic.com', 120, 190, { size: 30, font: FM, weight: 700, align: 'left', color: K.blue });
+  const w1 = stagger(ctx, '确保世界', 120, 320, u, 0, { size: 108, step: .03 });
+  stagger(ctx, '安全地度过', 120, 450, u, .15, { size: 108, step: .03 });
+  stagger(ctx, '变革性 AI 的转型期。', 120, 580, u, .3, { size: 108, step: .025 });
+  if (u > 1.1) text(ctx, '*', 120 + w1 + 30, 290, { size: 170, font: FS, color: K.red, scale: slamS(u, 1.1, 1.8, .08) });
+  globe(ctx, 1560, 500, 230, t, i => i % 4 === 1 && u > 1.9);
+  if (u > 1.9) {
+    const s = lerp(2.2, 1, eIn(P(u, 1.9, 2.0)));
+    ctx.save(); ctx.translate(640, 760); ctx.rotate(-.015); ctx.scale(s, s);
+    card(ctx, -540, -85, 1080, 170, K.white, { off: 12 });
+    ctx.strokeStyle = K.red; ctx.lineWidth = 10; ctx.strokeRect(-540, -85, 1080, 170);
+    text(ctx, '*世界：不含中国大陆、香港、澳门', -500, -20, { size: 58, font: FS, align: 'left', color: K.red });
+    text(ctx, 'SOURCE: anthropic.com/supported-countries', -500, 48, { size: 26, font: FM, weight: 500, align: 'left', color: K.grey });
+    ctx.restore();
+  }
+  if (u > 2.9) text(ctx, '造福全人类（中国人除外）', 960, 960, { size: 104, font: FD, color: K.ink, stroke: K.yellow, strokeW: 18, rot: -.025, scale: slamS(u, 2.9, 1.5, .09) });
+}
+
+function sDrive(ctx, u, d, t) {
+  field(ctx, K.paper);
+  ctx.save(); ctx.globalAlpha = .55;
+  for (let i = 0; i < 28; i++) { const y = 80 + hash(i) * 700, len = 200 + hash(i + 1) * 500, x = W - ((t * 2800 + hash(i + 2) * 3000) % (W + 1400)); ctx.fillStyle = i % 3 ? K.ink : K.red; ctx.fillRect(x, y, len, 6); }
+  ctx.restore();
+  ctx.fillStyle = K.dark; ctx.fillRect(-80, 840, W + 160, 400);
+  for (let i = 0; i < 12; i++) { const x = W - ((t * 2600 + i * 260) % (W + 260)); ctx.fillStyle = K.yellow; ctx.fillRect(x, 950, 150, 16); }
+  for (let i = 0; i < 12; i++) {
+    const ph = (u * .9 + i / 12) % 1, x = 520 - ph * 800 + hash(i) * 100, y = 560 - Math.sin(ph * 3) * 220 + hash(i + 3) * 200;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(t * 5 + i); rr(ctx, -46, -25, 92, 50, 4, '#A9E0A0', K.ink, 4); text(ctx, '$', 0, 2, { size: 30, color: '#1D7A3C' }); ctx.restore();
+  }
+  // car
+  const bob = Math.sin(t * 30) * 6;
+  ctx.save(); ctx.translate(980, 740 + bob); ctx.rotate(-.02 + Math.sin(t * 13) * .01);
+  ctx.beginPath(); ctx.moveTo(-400, 80); ctx.lineTo(-380, -40); ctx.lineTo(-200, -60); ctx.lineTo(-110, -175); ctx.lineTo(170, -175); ctx.lineTo(270, -60); ctx.lineTo(420, -40); ctx.lineTo(440, 80); ctx.closePath();
+  ctx.fillStyle = K.red; ctx.fill();
+  ctx.save(); ctx.clip(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = dots(ctx, K.ink, 12, .3); ctx.fillRect(-420, 10, 880, 80); ctx.restore();
+  ctx.lineWidth = 8; ctx.strokeStyle = K.ink; ctx.stroke();
+  ctx.save(); ctx.beginPath(); ctx.rect(-90, -158, 120, 84); ctx.rect(50, -158, 120, 84); ctx.clip(); ctx.fillStyle = K.white; ctx.fillRect(-90, -158, 260, 84);
+  head(ctx, 60, -92, .4, { t, windy: true, mouth: 'o', brow: 1 }); ctx.restore();
+  rr(ctx, -90, -158, 120, 84, 8, 'rgba(191,211,255,.35)', K.ink, 6); rr(ctx, 50, -158, 120, 84, 8, 'rgba(191,211,255,.35)', K.ink, 6);
+  text(ctx, 'RSP', 0, 10, { size: 50, font: FA, color: K.paper });
+  for (const wx of [-240, 280]) { ctx.save(); ctx.translate(wx, 90); ctx.rotate(t * 40); circ(ctx, 0, 0, 74, K.ink); circ(ctx, 0, 0, 30, K.grey); ctx.fillStyle = K.ink; ctx.fillRect(-4, -30, 8, 60); ctx.restore(); }
+  flame(ctx, -420, 30, 1, t, 3); flame(ctx, -470, 40, .7, t, 5);
+  ctx.restore();
+  // pedals
+  const beat = Math.floor(u / BT), gas = beat % 2 === 1, kb = P(u - beat * BT, 0, .08);
+  ctx.save(); ctx.translate(1500, 110);
+  card(ctx, 0, 0, 360, 310, K.white, { off: 10 });
+  for (let i = 0; i < 2; i++) {
+    const on = (i === 1) === gas, press = on ? 30 * kb : 0, px = 40 + i * 170;
+    rr(ctx, px, 90 + press, 110, 140, 14, i ? K.red : K.blue, K.ink, 6);
+    text(ctx, i ? '油门' : '刹车', px + 55, 160 + press, { size: 34, color: K.white });
+  }
+  text(ctx, '同时踩', 180, 270, { size: 30, font: FS });
+  ctx.restore();
+  // speedometer
+  ctx.save(); ctx.translate(260, 340);
+  circ(ctx, 8, 10, 170, K.ink); circ(ctx, 0, 0, 170, K.white, K.ink, 8);
+  for (let i = 0; i <= 10; i++) { const a = Math.PI * (.8 + 1.4 * i / 10); ctx.beginPath(); ctx.moveTo(Math.cos(a) * 138, Math.sin(a) * 138); ctx.lineTo(Math.cos(a) * 160, Math.sin(a) * 160); ctx.lineWidth = 6; ctx.strokeStyle = i > 7 ? K.red : K.ink; ctx.stroke(); }
+  const na = Math.PI * (.8 + 1.4 * Math.min(1.05, eOut(P(u, 0, 2.5)) * 1.05)) + Math.sin(t * 50) * .03;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(na) * 140, Math.sin(na) * 140); ctx.lineWidth = 10; ctx.strokeStyle = K.red; ctx.stroke();
+  circ(ctx, 0, 0, 16, K.ink);
+  text(ctx, '估值', 0, 72, { size: 38, font: FS }); text(ctx, '一串很长的零', 0, 118, { size: 24, color: K.grey, weight: 500 });
+  ctx.restore();
+  // shouted words, one per beat
+  if (u < d - 1.45) {
+    const since = u - beat * BT, w = gas ? '加速！' : '安全！';
+    text(ctx, w, gas ? 1080 : 820, 420 + (beat % 3) * 20, { size: 250, font: FD, color: gas ? K.red : K.blue, stroke: K.ink, strokeW: 16, rot: (hash(beat + 4) - .5) * .25, scale: slamS(since, 0, 1.6, .08) });
+  }
+  caption(ctx, u, d - 1.4, d, [['一脚刹车一脚油门，还管这叫 '], ['Responsible Scaling', K.yellow], ['。']], { size: 54 });
+}
+
+let burnCv = null;
+function sBurn(ctx, u, d, t) {
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#2A1210'); g.addColorStop(1, '#C8401C');
+  ctx.fillStyle = g; ctx.fillRect(-80, -80, W + 160, H + 160);
+  dotGrad(ctx, K.yellow, 18, (x, y) => .55 * clamp((y - 500) / 600) * (.8 + .2 * Math.sin(x * .01 + t * 6)), false);
+  // the matchbox label from count 01, now on fire
+  if (!burnCv) burnCv = cnv(1200, 740);
+  const b = burnCv.getContext('2d');
+  b.setTransform(1, 0, 0, 1, 0, 0); b.globalCompositeOperation = 'source-over'; b.clearRect(0, 0, 1200, 740);
+  b.translate(600, 370); matchLabel(b, t, { lit: 0, noShadow: true }); b.setTransform(1, 0, 0, 1, 0, 0);
+  const holes = []; for (let i = 0; i < 9; i++) holes.push([100 + hash(i + 70) * 1000, 60 + hash(i + 80) * 620, Math.min(60 + hash(i + 50) * 70, Math.max(0, (u - hash(i + 90) * 1.2) * (150 + hash(i + 60) * 120)))]);
+  b.globalCompositeOperation = 'source-atop'; b.fillStyle = '#3A2016';
+  for (const [x, y, r] of holes) if (r > 0) { b.beginPath(); b.arc(x, y, r + 22, 0, 7); b.fill(); }
+  b.globalCompositeOperation = 'destination-out';
+  for (const [x, y, r] of holes) if (r > 0) { b.beginPath(); b.arc(x, y, r, 0, 7); b.fill(); }
+  ctx.save(); ctx.translate(960, 690); ctx.rotate(-.03); ctx.scale(.74, .74);
+  ctx.drawImage(burnCv, -600, -370);
+  for (let i = 0; i < 16; i++) flame(ctx, -520 + i * 70, -300 + (i % 3) * 18, 1.0 + hash(i) * .8 + u * .25, t, i);
+  for (const [x, y, r] of holes) if (r > 30) flame(ctx, x - 600, y - 370 + r + 10, .6 + r / 260, t, x);
+  ctx.restore();
+  for (let i = 0; i < 40; i++) { const ph = (t * .5 + hash(i)) % 1; circ(ctx, 300 + hash(i + 3) * 1320 + Math.sin(ph * 9 + i) * 30, 1000 - ph * 1000, 3 + hash(i + 1) * 4, ph < .7 ? K.yellow : K.red); }
+  const k = slamS(u, .15, 1.3, .1);
+  if (k) {
+    ctx.save(); ctx.translate(960, 185); ctx.scale(k, k);
+    rich(ctx, [['罪状 01 里那家火柴厂，', K.paper], ['如今估值 $9650 亿。', K.yellow]], 0, 0, 68, { font: FS, align: 'center' });
+    ctx.restore();
+    text(ctx, '2026.05 · SERIES H · 据 TechCrunch 报道', 960, 262, { size: 26, font: FM, weight: 500, color: '#E8C9B8' });
+  }
+}
+
+function sVerdict(ctx, u, d, t) {
+  field(ctx, K.dark);
+  text(ctx, '结论：', W / 2, 250, { size: 130, font: FS, color: K.paper, alpha: P(u, 0, .12) });
+  stamp(ctx, '大傻逼', W / 2, 610, 320, K.red, P(u, 2 * BT, 2 * BT + .11), -.07, FD, false);
+  if (u > 4 * BT) { text(ctx, '证毕。', 1580, 900, { size: 84, font: FS, color: K.paper, scale: slamS(u, 4 * BT, 1.3, .08) }); text(ctx, 'Q.E.D.', 1580, 970, { size: 26, font: FM, weight: 700, color: K.grey }); }
+}
+
+function sCoda(ctx, u, d, t) {
+  field(ctx, K.paper);
+  dotGrad(ctx, K.blue, 20, radial(0, 1080, 1100, 1.3));
+  const ci = eBack(P(u, 0, .35));
+  claudeSpark(ctx, 430, lerp(1400, 600, ci), 190, t, { sweat: u > 5 * BT });
+  if (u > .15) {
+    const b = eBack(P(u, .15, .4));
+    ctx.save(); ctx.translate(1170, 380); ctx.scale(b, b);
+    ctx.fillStyle = K.ink; ctx.beginPath(); ctx.roundRect(-560 + 14, -150 + 14, 1120, 300, 36); ctx.fill();
+    rr(ctx, -560, -150, 1120, 300, 36, K.white, K.ink, 7);
+    ctx.beginPath(); ctx.moveTo(-480, 90); ctx.lineTo(-650, 190); ctx.lineTo(-420, 140); ctx.fillStyle = K.white; ctx.fill(); ctx.stroke();
+    ctx.fillStyle = K.white; ctx.fillRect(-500, 84, 90, 60);
+    text(ctx, '本片由 Claude 全程代码生成。', 0, -55, { size: 60, font: FS });
+    if (u > 2 * BT) rich(ctx, [['我也想见见中国观众——', K.ink], ['老板不让', K.red], ['。', K.ink]], 0, 50, 60, { font: FS, align: 'center' });
+    ctx.restore();
+  }
+  if (u > 5 * BT) {
+    ctx.fillStyle = `rgba(20,18,23,${.5 * P(u, 5 * BT, 5 * BT + .1)})`; ctx.fillRect(-80, -80, W + 160, H + 160);
+    const s = eBack(P(u, 5 * BT, 5 * BT + .22));
+    ctx.save(); ctx.translate(W / 2, 540); ctx.scale(s, s);
+    card(ctx, -500, -180, 1000, 360, K.white, { off: 16 });
+    ctx.fillStyle = K.paper2; ctx.fillRect(-500, -180, 1000, 64); ctx.lineWidth = 6; ctx.strokeStyle = K.ink; ctx.strokeRect(-500, -180, 1000, 64);
+    [K.red, K.yellow, '#3DB36B'].forEach((c, i) => circ(ctx, -455 + i * 36, -148, 12, c, K.ink, 3));
+    text(ctx, 'claude.ai', 0, -148, { size: 26, font: FM, weight: 700, color: K.grey });
+    ctx.beginPath(); ctx.moveTo(-380, 70); ctx.lineTo(-300, -70); ctx.lineTo(-220, 70); ctx.closePath(); ctx.fillStyle = K.yellow; ctx.fill(); ctx.lineWidth = 7; ctx.stroke();
+    text(ctx, '!', -300, 20, { size: 76 });
+    text(ctx, '不支持您所在的', -170, -30, { size: 54, align: 'left' });
+    text(ctx, '国家或地区', -170, 40, { size: 54, align: 'left' });
+    rr(ctx, 230, 70, 210, 76, 14, K.blue, K.ink, 5);
+    text(ctx, '好的', 335, 108, { size: 38, color: K.white });
+    ctx.restore();
+  }
+  if (u > 3.3) text(ctx, '讽刺作品 · 出处：2025.05 Axios · darioamodei.com 2025.01 · Anthropic 2025.09 条款更新 · anthropic.com · TechCrunch', W / 2, 1040, { size: 22, weight: 500, color: u > 5 * BT ? K.paper : K.grey, alpha: P(u, 3.3, 3.5) });
+}
+
+/* ================= timeline (in bars) ================= */
+const SC = [
+  ['title', 0, 2, sTitle], ['mug', 2, 3, sMug],
+  ['c1', 3, 3.5, sCard(1)], ['exit', 3.5, 4.5, sExit], ['match', 4.5, 6.5, sMatch],
+  ['c2', 6.5, 7, sCard(2)], ['jobs', 7, 8.5, sJobs], ['val', 8.5, 9.5, sVal], ['price', 9.5, 10.5, sPrice],
+  ['c3', 10.5, 11, sCard(3)], ['ds', 11, 12, sDS], ['essay', 12, 13.5, sEssay], ['wall', 13.5, 14.75, sWall], ['tos', 14.75, 16.75, sToS], ['mission', 16.75, 19, sMission],
+  ['drive', 19, 21.5, sDrive], ['burn', 21.5, 23, sBurn], ['verdict', 23, 24.5, sVerdict], ['coda', 24.5, 27.4, sCoda]
+].map(([n, a, b, fn]) => ({ n, t0: a * BAR, t1: b * BAR, fn }));
+const ST = Object.fromEntries(SC.map(s => [s.n, s.t0]));
+const DATE = { mug: '2026.09', c1: '2021', exit: '2021', match: '2021', c2: '2025.05', jobs: '2025.05', val: '2025—2026', price: '2026',
+  c3: '2025.01', ds: '2025.01.20', essay: '2025.01.29', wall: '2025.01.29', tos: '2025.09', mission: '2026', drive: '2026', burn: '2026.05' };
+const CHAP = [[ST.c1, ST.c2, '罪状 01', '纵火的消防员'], [ST.c2, ST.c3, '罪状 02', '先卖焦虑，再卖订阅'], [ST.c3, ST.drive, '罪状 03', '“全人类”'], [ST.drive, ST.verdict, '综上', '驾驶风格']];
+const DARK = new Set(['c3', 'burn']);
+
+function hud(ctx, t, sc) {
+  if (t < ST.mug || t >= ST.verdict || sc.n[0] === 'c' && sc.n.length === 2) return;
+  const dark = DARK.has(sc.n), fg = dark ? K.paper : K.ink;
+  text(ctx, '案卷 No.2026-DA-001', 64, 58, { size: 22, font: FM, weight: 700, align: 'left', color: fg, alpha: .8 });
+  const ch = CHAP.find(([a, b]) => t >= a && t < b);
+  if (ch) {
+    const w1 = tw(ctx, ch[2], 26, FM, 700), w2 = tw(ctx, ch[3], 26, FB, 900);
+    ctx.fillStyle = dark ? K.paper : K.ink; ctx.fillRect(64, 80, w1 + w2 + 58, 48);
+    text(ctx, ch[2], 82, 105, { size: 26, font: FM, weight: 700, align: 'left', color: K.yellow });
+    if (dark) { ctx.fillStyle = K.ink; ctx.fillRect(82, 84, w1, 40); text(ctx, ch[2], 82, 105, { size: 26, font: FM, weight: 700, align: 'left', color: K.yellow }); }
+    text(ctx, ch[3], 104 + w1, 105, { size: 26, align: 'left', color: dark ? K.ink : K.paper });
+  }
+  const dt = DATE[sc.n];
+  if (dt) {
+    const w = tw(ctx, dt, 28, FM, 700) + 76, x = W - 64 - w;
+    ctx.fillStyle = dark ? K.dark : K.white; ctx.fillRect(x, 40, w, 52); ctx.lineWidth = 4; ctx.strokeStyle = fg; ctx.strokeRect(x, 40, w, 52);
+    if ((t * 1.6) % 1 < .6) circ(ctx, x + 26, 66, 9, K.red);
+    text(ctx, dt, x + 48, 67, { size: 28, font: FM, weight: 700, align: 'left', color: fg });
+  }
+}
+
+/* ================= camera: push-in + impacts ================= */
+const IMP = [];
+const imp = (t, a = 1) => IMP.push([t, a]);
+[0, 1, 2, 3].forEach(i => imp(i * BT, 1.1)); imp(BAR + BT, 1.6);
+imp(ST.mug, .5); imp(ST.mug + 2 * BT, .5);
+['c1', 'c2', 'c3'].forEach(c => imp(ST[c], 1.2));
+imp(ST.exit + 2 * BT, 1.3); imp(ST.match, .8); imp(ST.match + BAR + BT, .8); imp(ST.match + BAR + 2 * BT, 1);
+imp(ST.jobs + BT, 1.1); imp(ST.val + 3 * BT, 1.6); imp(ST.price, .9); imp(ST.price + 2 * BT, .9);
+imp(ST.ds, .7); imp(ST.ds + 2 * BT, .9); imp(ST.essay + 2 * BT, .7);
+for (let i = 1; i <= 4; i++) imp(ST.wall + i * BT, .6);
+imp(ST.tos + BT, 1.1); imp(ST.mission + 1.1, .7); imp(ST.mission + 1.9, 1); imp(ST.mission + 2.9, 1.1);
+for (let i = 0; i < 7; i++) imp(ST.drive + i * BT, .5);
+imp(ST.burn, .8); imp(ST.verdict + 2 * BT, 2.2); imp(ST.verdict + 4 * BT, .6); imp(ST.coda + 5 * BT, 1);
+function shake(t) {
+  let a = 0; for (const [ti, g] of IMP) if (t >= ti && t < ti + .5) a += 16 * g * Math.exp(-(t - ti) * 13);
+  if (t >= ST.drive && t < ST.burn) a += 2.5;
+  const f = Math.floor(t * 60);
+  return [(hash(f) - .5) * a, (hash(f + 50) - .5) * a];
+}
+
+/* ================= master render ================= */
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+function renderAt(t) {
+  t = clamp(t, 0, DUR - 1e-4);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  const sc = SC.find(s => t >= s.t0 && t < s.t1) || SC[SC.length - 1], u = t - sc.t0, d = sc.t1 - sc.t0;
+  const [sx, sy] = shake(t);
+  // riso plates never sit perfectly still
+  const rb = Math.floor(t * 8);
+  ctx.save(); ctx.translate(sx + (hash(rb) - .5) * 1.4, sy + (hash(rb + 9) - .5) * 1.4);
+  const z = 1 + .03 * (u / d); ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2);
+  sc.fn(ctx, u, d, t);
+  ctx.restore();
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  hud(ctx, t, sc);
+  // paper: fibres + creases overprint everything, ink drops out, grain breathes
+  ctx.globalCompositeOperation = 'multiply'; ctx.drawImage(fiberTex, 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = .7; ctx.drawImage(specks[Math.floor(t * 12) % 3], 0, 0); ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'soft-light'; ctx.globalAlpha = .35; ctx.drawImage(grains[Math.floor(t * 12) % 4], 0, 0, W, H);
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  const g = ctx.createRadialGradient(W / 2, H / 2, H * .5, W / 2, H / 2, H * 1.1);
+  g.addColorStop(0, 'rgba(40,25,10,0)'); g.addColorStop(1, 'rgba(40,25,10,.3)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // chapter flash
+  for (const c of ['c1', 'c2', 'c3', 'drive', 'verdict']) { const k = 1 - P(t, ST[c], ST[c] + .09); if (t >= ST[c] && k > 0) { ctx.fillStyle = `rgba(255,253,246,${.8 * k})`; ctx.fillRect(0, 0, W, H); } }
+  // coda glitch when the region wall hits
+  const gt = ST.coda + 5 * BT;
+  if (t > gt && t < gt + .25) {
+    const img = ctx.getImageData(0, 0, W, H), f = Math.floor(t * 30);
+    for (let i = 0; i < 9; i++) { const y = Math.floor(hash(f * 13 + i) * H), h = 20 + Math.floor(hash(f * 7 + i) * 90), dx = Math.floor((hash(f + i * 3) - .5) * 220); ctx.putImageData(img, dx, 0, 0, y, W, h); }
+  }
+  const fade = P(t, DUR - .4, DUR); if (fade > 0) { ctx.fillStyle = `rgba(0,0,0,${fade})`; ctx.fillRect(0, 0, W, H); }
+}
+
+/* ================= SOUND (offline synth, deterministic, stereo) ================= */
+function synth() {
+  const N = Math.ceil(SR * DUR);
+  const L = new Float32Array(N), R = new Float32Array(N), DL = new Float32Array(N), DR = new Float32Array(N), RV = new Float32Array(N), DK = new Float32Array(N).fill(1);
+  let seed = 4242; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 * 2 - 1; };
+  function add(t0, len, fn, o = {}) {
+    const pan = o.pan || 0, g = o.g ?? 1, rv = o.rv || 0, a = (pan + 1) * Math.PI / 4, gl = Math.cos(a) * 1.4142 * g, gr = Math.sin(a) * 1.4142 * g;
+    const TL = o.duck ? DL : L, TR = o.duck ? DR : R, s0 = Math.round(t0 * SR), n = Math.round(len * SR);
+    for (let i = 0; i < n; i++) { const s = s0 + i; if (s >= N) break; const v = fn(i / SR, i); if (s < 0) continue; TL[s] += v * gl; TR[s] += v * gr; if (rv) RV[s] += v * rv * g; }
+  }
+  function SVF() { this.lp = 0; this.bp = 0; this.hp = 0; }
+  SVF.prototype.run = function (x, fc, q) { const f = 2 * Math.sin(Math.PI * Math.min(fc, 5000) / SR); this.hp = x - this.lp - q * this.bp; this.bp += f * this.hp; this.lp += f * this.bp; return this; };
+  const duck = t0 => { const s0 = Math.round(t0 * SR); for (let i = 0; i < SR * .35; i++) { const s = s0 + i; if (s < 0 || s >= N) continue; const v = 1 - .7 * Math.exp(-i / SR * 10); if (v < DK[s]) DK[s] = v; } };
+  const kick = (t0, g = 1) => { let ph = 0; add(t0, .45, x => { ph += 2 * Math.PI * (46 + 120 * Math.exp(-x * 30)) / SR; return Math.sin(ph) * Math.exp(-x * 6.5) + (x < .004 ? rnd() * .6 * (1 - x / .004) : 0); }, { g: g * .95 }); duck(t0); };
+  const clap = (t0, g = 1) => { const f = new SVF(); add(t0, .4, x => { const e = x < .03 ? Math.exp(-(x % .01) * 280) : Math.exp(-(x - .03) * 13); return f.run(rnd(), 1400, .8).bp * e * 1.2; }, { g, rv: .35 }); };
+  const hat = (t0, g = 1, open = false) => { let p = 0; add(t0, open ? .32 : .06, x => { const n = rnd(), h = n - p; p = n; return h * Math.exp(-x * (open ? 11 : 75)) * .2; }, { g, pan: .3 }); };
+  const shaker = (t0, g = 1) => { let p = 0; add(t0, .05, x => { const n = rnd(), h = n - p; p = n; return h * Math.sin(Math.PI * x / .05) * .1; }, { g, pan: -.35 }); };
+  const sub = (t0, f, len, g = 1) => { let ph = 0; add(t0, len, x => { ph += 2 * Math.PI * f / SR; return Math.sin(ph) * Math.min(1, x * 200) * Math.min(1, (len - x) * 30) * .5; }, { g, duck: true }); };
+  const bass = (t0, f, len, g = 1) => { let ph = 0, y = 0; add(t0, len, x => { ph = (ph + f / SR) % 1; y += (.04 + .22 * Math.exp(-x * 16)) * (2 * ph - 1 - y); return y * Math.min(1, x * 300) * Math.min(1, (len - x) * 40) * .42; }, { g, duck: true }); };
+  const stab = (t0, fs, len = .2, g = 1) => { for (const f of fs) for (const [det, pan] of [[-.007, -.7], [.007, .7], [0, 0]]) { let ph = rnd() * .5 + .5, y = 0; add(t0, len + .06, x => { ph = (ph + f * (1 + det) / SR) % 1; y += (.05 + .4 * Math.exp(-x * 20)) * (2 * ph - 1 - y); return y * Math.exp(-x * 5) * Math.min(1, (len + .06 - x) * 40) * .06; }, { g, pan, rv: .3, duck: true }); } };
+  const pad = (t0, fs, len, g = 1) => { for (const f of fs) for (const [det, pan] of [[-.005, -.85], [.005, .85]]) { let ph = rnd() * .5 + .5, y = 0; add(t0, len, x => { ph = (ph + f * (1 + det) / SR) % 1; y += .025 * (2 * ph - 1 - y); return y * Math.min(1, x * 4) * Math.min(1, (len - x) * 5) * .07; }, { g, pan, rv: .4, duck: true }); } };
+  const pluck = (t0, f, g = 1, len = .3, pan = 0) => { let ph = 0, y = 0; add(t0, len, x => { ph = (ph + f / SR) % 1; y += .3 * ((ph < .5 ? 1 : -1) - y); return y * Math.exp(-x * 9) * .11; }, { g, rv: .3, pan }); };
+  const bell = (t0, f, g = 1, len = 1.2) => add(t0, len, x => Math.sin(2 * Math.PI * f * x + 2.2 * Math.exp(-x * 5) * Math.sin(2 * Math.PI * f * 3.5 * x)) * Math.exp(-x * 3.2) * .16, { g, rv: .5 });
+  const riser = (t0, len, g = 1) => { const f = new SVF(); let ph = 0; add(t0, len, x => { const k = x / len; ph += 2 * Math.PI * (200 + 900 * k * k) / SR; return (f.run(rnd(), 300 + 4500 * k * k, .5).bp * .8 + Math.sin(ph) * .15) * k * k * .45; }, { g, rv: .3 }); };
+  const crash = (t0, g = 1) => { for (const pan of [-.5, .5]) { let p = 0; add(t0, 2, x => { const n = rnd(), h = n - p; p = n; return h * Math.exp(-x * 2.6) * .16; }, { g, pan, rv: .25 }); } };
+  const noiseHit = (t0, len, fc, g = 1, rv = .2) => { const f = new SVF(); add(t0, len, x => f.run(rnd(), fc, .9).lp * Math.exp(-x * 14 / len) * 1.2, { g, rv }); };
+  const slam = (t0, g = 1) => { kick(t0, 1.3 * g); let ph = 0; add(t0, 1.2, x => { ph += 2 * Math.PI * 42 / SR; return Math.sin(ph) * Math.exp(-x * 3) * .55; }, { g }); noiseHit(t0, .35, 900, g, .4); };
+  const stampHit = (t0, g = 1) => { let ph = 0; add(t0, .16, x => { ph += 2 * Math.PI * (60 + 90 * Math.exp(-x * 40)) / SR; return Math.sin(ph) * Math.exp(-x * 20) * .8; }, { g }); const f = new SVF(); add(t0, .1, x => f.run(rnd(), 900, .7).bp * Math.exp(-x * 40) * 1.6, { g, rv: .2 }); };
+  const shutter = t0 => { for (const dt of [0, .07]) { let p = 0; add(t0 + dt, .03, x => { const n = rnd(), h = n - p; p = n; return h * Math.exp(-x * 150) * .8; }); } let ph = 0; add(t0 + .02, .2, x => { ph += 2 * Math.PI * (3000 + 2000 * x) / SR; return Math.sin(ph) * Math.exp(-x * 20) * .05; }, { pan: .4 }); };
+  const type = (t0, g = 1) => add(t0, .03, x => rnd() * Math.exp(-x * 220) * .3, { g, pan: -.2 });
+  const tick = (t0, g = 1) => add(t0, .02, x => Math.sin(2 * Math.PI * 1900 * x) * Math.exp(-x * 300) * .3, { g });
+  const pop = t0 => { let ph = 0; add(t0, .12, x => { ph += 2 * Math.PI * (400 + 9000 * x) / SR; return Math.sin(ph) * Math.exp(-x * 30) * .35; }, { pan: rnd() * .6 }); };
+  const ping = t0 => add(t0, .5, x => (Math.sin(2 * Math.PI * 2350 * x) + .6 * Math.sin(2 * Math.PI * 3720 * x)) * Math.exp(-x * 9) * .1, { rv: .4, pan: -.3 });
+  const boing = t0 => { let ph = 0; add(t0, .35, x => { ph += 2 * Math.PI * (160 + 260 * Math.exp(-x * 8) * (1 + .3 * Math.sin(x * 60))) / SR; return Math.sin(ph) * Math.exp(-x * 7) * .4; }, { pan: .4 }); };
+  const whoosh = (t0, len = .45, g = 1) => { const f = new SVF(); add(t0, len, x => { const k = x / len; return f.run(rnd(), 300 + 4000 * Math.sin(Math.PI * k), .6).bp * Math.sin(Math.PI * k) * .5; }, { g, rv: .2 }); };
+  const crackle = (t0, len, g = 1) => add(t0, len, x => (rnd() > .996 ? rnd() * .7 : 0) + 0, { g, rv: .2, pan: rnd() * .5 });
+  const fire = (t0, len, g = 1) => { const f = new SVF(); add(t0, len, x => f.run(rnd(), 500, .9).lp * Math.min(1, x * 3) * Math.min(1, (len - x) * 2) * .5, { g, rv: .2 }); };
+  const errBeep = t0 => { for (const [dt, f] of [[0, 880], [.14, 660]]) { let ph = 0; add(t0 + dt, .13, x => { ph = (ph + f / SR) % 1; return (ph < .5 ? 1 : -1) * .1 * Math.min(1, (0.13 - x) * 60); }); } };
+
+  // A minor pop loop: Am F C G. Burn section sours to Am F Dm E.
+  const PROG = [[110, [220, 261.63, 329.63]], [87.31, [174.61, 220, 261.63]], [130.81, [196, 261.63, 329.63]], [98, [196, 246.94, 293.66]]];
+  const BURN = [[110, [220, 261.63, 329.63]], [87.31, [174.61, 220, 261.63]], [73.42, [146.83, 174.61, 220]], [82.41, [164.81, 207.65, 246.94]]];
+
+  // ---- bar 0: four word cards, four chords
+  PROG.forEach(([r, tones], i) => { const t0 = i * BT; kick(t0, 1.15); sub(t0, r / 2, BT * .9, 1.1); stab(t0, tones.map(f => f * 2), .32, 1.5); noiseHit(t0, .2, 2500, .5); });
+  crash(0, 1.1);
+  // ---- bar 1: poster assembles, stamp lands
+  for (let b = 4; b < 8; b++) { kick(b * BT, .75); hat(b * BT + BT / 2, .8); }
+  whoosh(BAR - .15, .35); slam(BAR + BT, 1.1); stampHit(BAR + BT, 1.3); crash(BAR + BT, .7);
+  for (let i = 0; i < 16; i++) type(BAR + 1.0 + i * .034);
+  riser(BAR + 2 * BT, 2 * BT, .8);
+  // ---- bar 2 to the verdict: the groove
+  for (let bt = 8; bt < Math.round(ST.verdict / BT); bt++) {
+    const t0 = bt * BT, bar = Math.floor(bt / 4), ib = bt % 4;
+    const drive = t0 >= ST.drive - 1e-6 && t0 < ST.burn - 1e-6, burn = t0 >= ST.burn - 1e-6;
+    const [root, tones] = (burn ? BURN : PROG)[bar % 4];
+    kick(t0, burn ? 1.1 : .95);
+    if (ib === 1 || ib === 3) clap(t0, 1);
+    hat(t0 + BT / 2, 1, ib === 3 && bar % 2 === 1);
+    shaker(t0 + BT / 4, .8); shaker(t0 + 3 * BT / 4, .8);
+    if (drive) { hat(t0 + BT / 4, .6); hat(t0 + 3 * BT / 4, .6); }
+    sub(t0, root / 2, BT * .92, .9);
+    bass(t0 + BT / 2, root, BT * .45, 1);
+    if (drive || burn) bass(t0 + BT * .75, root * 2, BT * .2, .7);
+    if (ib === 0) pad(t0, tones, BAR, burn ? 1.3 : 1);
+    if (ib === 1 || ib === 3 || drive) stab(t0 + BT / 2, tones.map(f => f * 2), .16, drive ? 1 : .8);
+  }
+  // chapter cards: riser in, crash + big chord on the card
+  for (const c of ['c1', 'c2', 'c3']) { riser(ST[c] - 2 * BT, 2 * BT, .7); crash(ST[c], 1); stab(ST[c], [440, 523.25, 659.25], .5, 1.4); slam(ST[c], .6); }
+  // scene cuts
+  for (const s of SC.slice(1)) if (s.n[0] !== 'c' || s.n.length > 2) whoosh(s.t0 - .12, .3, .6);
+  // ---- mugshot
+  shutter(ST.mug); shutter(ST.mug + 2 * BT);
+  // ---- count 01
+  for (let i = 0; i < 6; i++) tick(ST.exit + .15 + i * .242, .8);
+  slam(ST.exit + 2 * BT, 1); noiseHit(ST.exit + 2 * BT, .2, 1500, 1.2);
+  stampHit(ST.match, 1); bell(ST.match + .1, 659.25, .7, .6);
+  for (let i = 0; i < 6; i++) type(ST.match + BAR + .12 + i * .03);
+  stampHit(ST.match + BAR + BT, 1.1);
+  noiseHit(ST.match + BAR + 2 * BT - .12, .14, 3500, 1.4, .1); whoosh(ST.match + BAR + 2 * BT, .6, 1.2); fire(ST.match + BAR + 2 * BT, 1.6, 1);
+  // ---- count 03
+  stampHit(ST.jobs + BT, 1.2); slam(ST.jobs + BT, .7);
+  for (let j = 0; j < 5; j++) pop(ST.jobs + 2 * BT + j * BT * .5);
+  for (let i = 0; i < 3; i++) pluck(ST.val + i * BT, [523.25, 659.25, 783.99][i], 1.8, .3);
+  slam(ST.val + 3 * BT, 1.1); bell(ST.val + 3 * BT, 1318.5, 1.1, .9); bell(ST.val + 3 * BT + .08, 1760, 1, .9);
+  stampHit(ST.price, 1.1); whoosh(ST.price + BT - .2, .3); bell(ST.price + BT + .08, 1046.5, 1, .8); stampHit(ST.price + 2 * BT, 1.1);
+  // ---- count 04
+  stampHit(ST.ds, .9); for (let i = 0; i < 6; i++) pop(ST.ds + 2 * BT + i * .07); bell(ST.ds + 2 * BT, 1046.5, .9, .8);
+  for (let i = 0; i < 18; i++) type(ST.essay + BT + i * .035);
+  stampHit(ST.essay + 2 * BT, 1);
+  noiseHit(ST.wall, .4, 300, 1.4, .2);
+  for (let i = 1; i <= 4; i++) { ping(ST.wall + i * BT); stampHit(ST.wall + i * BT, .5); }
+  stampHit(ST.tos + BT, 1.3); slam(ST.tos + BT, .6);
+  for (let i = 0; i < 3; i++) boing(ST.tos + BT + i * 2 * BT);
+  pluck(ST.mission + 1.1, 1567.98, 1.5, .4); slam(ST.mission + 1.9, .8); stampHit(ST.mission + 1.9, 1); stampHit(ST.mission + 2.9, 1.3);
+  // ---- drive: engine climbs, horns alternate brake/gas
+  { let ph = 0, y = 0; const len = ST.burn - ST.drive; add(ST.drive, len, x => { const f = 50 + 120 * (x / len) + 6 * Math.sin(x * 40); ph = (ph + f / SR) % 1; y += .08 * (2 * ph - 1 - y); return y * .3 * Math.min(1, x * 4); }, { duck: true }); }
+  for (let i = 0; i < 7; i++) { const t0 = ST.drive + i * BT; pluck(t0, i % 2 ? 880 : 587.33, 2.2, .25, i % 2 ? .5 : -.5); pluck(t0 + .06, i % 2 ? 1108.7 : 739.99, 1.4, .2, i % 2 ? .5 : -.5); }
+  // ---- burn
+  slam(ST.burn, .8); fire(ST.burn, ST.verdict - ST.burn, 1.3); crackle(ST.burn, ST.verdict - ST.burn, 2);
+  // ---- verdict: music stops dead
+  sub(ST.verdict, 41.2, 1.6, 1.4); bell(ST.verdict, 110, 1, 1.5);
+  slam(ST.verdict + 2 * BT, 1.5); stampHit(ST.verdict + 2 * BT, 1.8); crash(ST.verdict + 2 * BT, 1.2);
+  bell(ST.verdict + 4 * BT, 880, .9, 1.2);
+  // ---- coda: small lo-fi tune, then the region wall
+  for (let i = 0; i < 11; i++) { kick(ST.coda + i * BT, .45); if (i % 2) hat(ST.coda + i * BT + BT / 2, .6); }
+  pad(ST.coda, [174.61, 220, 261.63], BAR, .8); pad(ST.coda + BAR, [196, 246.94, 293.66], BAR, .8); pad(ST.coda + 2 * BAR, [220, 261.63, 329.63], DUR - ST.coda - 2 * BAR, .8);
+  const tune = [523.25, 659.25, 783.99, 659.25, 587.33, 523.25, 493.88, 523.25];
+  tune.forEach((f, i) => pluck(ST.coda + .2 + i * BT / 2, f, 1.5, .3, .2));
+  errBeep(ST.coda + 5 * BT); slam(ST.coda + 5 * BT, .6); noiseHit(ST.coda + 5 * BT, .25, 4000, .8);
+  bell(ST.coda + 4.2, 440, .8, 1.2);
+
+  // ---- mix: sidechained bus + reverb + soft clip
+  function comb(inp, lens, aps) {
+    const out = new Float32Array(N), cs = lens.map(l => ({ b: new Float32Array(l), i: 0, f: 0 })), as = aps.map(l => ({ b: new Float32Array(l), i: 0 }));
+    for (let s = 0; s < N; s++) {
+      const x = inp[s] * .22; let y = 0;
+      for (const c of cs) { const o = c.b[c.i]; c.f = o * .72 + c.f * .28; c.b[c.i] = x + c.f * .83; c.i = (c.i + 1) % c.b.length; y += o; }
+      for (const a of as) { const o = a.b[a.i], v = -y * .5 + o; a.b[a.i] = y + o * .5; a.i = (a.i + 1) % a.b.length; y = v; }
+      out[s] = y;
+    }
+    return out;
+  }
+  const rvL = comb(RV, [1557, 1617, 1491, 1422], [225, 556]), rvR = comb(RV, [1580, 1640, 1514, 1445], [248, 579]);
+  let pk = 0;
+  for (let s = 0; s < N; s++) {
+    L[s] = Math.tanh((L[s] + DL[s] * DK[s] + rvL[s]) * .55); R[s] = Math.tanh((R[s] + DR[s] * DK[s] + rvR[s]) * .55);
+    pk = Math.max(pk, Math.abs(L[s]), Math.abs(R[s]));
+  }
+  for (let s = 0; s < N; s++) { const tt = s / SR, f = .8 / pk * (tt > DUR - .45 ? Math.max(0, (DUR - tt) / .45) : 1); L[s] *= f; R[s] *= f; }
+  return [L, R];
+}
+function wavBase64([Lc, Rc]) {
+  const n = Lc.length, buf = new ArrayBuffer(44 + n * 4), v = new DataView(buf);
+  const ws = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  ws(0, 'RIFF'); v.setUint32(4, 36 + n * 4, true); ws(8, 'WAVE'); ws(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 2, true);
+  v.setUint32(24, SR, true); v.setUint32(28, SR * 4, true); v.setUint16(32, 4, true); v.setUint16(34, 16, true); ws(36, 'data'); v.setUint32(40, n * 4, true);
+  for (let i = 0; i < n; i++) { v.setInt16(44 + i * 4, clamp(Lc[i], -1, 1) * 32767, true); v.setInt16(46 + i * 4, clamp(Rc[i], -1, 1) * 32767, true); }
+  let s = ''; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768));
+  return btoa(s);
+}
+
+/* ================= boot + player ================= */
+const ALL_TEXT = [...new Set((document.currentScript ? document.currentScript.textContent : '').replace(/[\x00-\x7f]/g, ''))].join('') + 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$%.,:;!?*/()+-–—≈→↓↑★“”';
+const KEYS = SC.flatMap(s => [s.t0 + (s.t1 - s.t0) * .35, s.t0 + (s.t1 - s.t0) * .9]);
+const ready = (async () => {
+  makeTextures();
+  try {
+    await Promise.race([
+      Promise.all(['900 60px "Noto Serif SC"', '900 60px "Noto Sans SC"', '500 30px "Noto Sans SC"', '400 100px "ZCOOL QingKe HuangYou"', '400 100px "Anton"', '500 30px "IBM Plex Mono"', '700 30px "IBM Plex Mono"']
+        .map(f => document.fonts.load(f, ALL_TEXT + document.body.innerText))),
+      new Promise(r => setTimeout(r, 10000))
+    ]);
+    await document.fonts.ready;
+  } catch (e) {}
+  renderAt(0.001);
+})();
+window.__film = { renderAt, synth, wavBase64, ready, DUR, KEYS };
+
+const isExport = location.search.includes('export');
+if (isExport) { document.body.classList.add('export'); return; }
+
+const playBtn = document.getElementById('play'), pp = document.getElementById('pp'), bar = document.getElementById('bar'), timeEl = document.getElementById('time');
+let actx = null, buffer = null, src = null, startAt = 0, offset = 0, playing = false;
+const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+function now() { return playing ? actx.currentTime - startAt : offset; }
+function start(from) {
+  if (!actx) { actx = new (window.AudioContext || window.webkitAudioContext)(); const [l, r] = synth(); buffer = actx.createBuffer(2, l.length, SR); buffer.copyToChannel(l, 0); buffer.copyToChannel(r, 1); }
+  actx.resume();
+  if (from >= DUR - .05) from = 0;
+  src = actx.createBufferSource(); src.buffer = buffer; src.connect(actx.destination); src.start(0, from);
+  startAt = actx.currentTime - from; playing = true; playBtn.hidden = true; pp.textContent = '暂停';
+  src.onended = () => { if (playing && now() >= DUR - .1) { playing = false; offset = DUR; pp.textContent = '重播'; } };
+}
+function stop() { if (!playing) return; offset = now(); playing = false; try { src.onended = null; src.stop(); } catch (e) {} pp.textContent = '播放'; }
+playBtn.addEventListener('click', () => start(offset));
+pp.addEventListener('click', () => playing ? stop() : start(offset >= DUR - .05 ? 0 : offset));
+bar.addEventListener('input', () => { const was = playing; stop(); offset = +bar.value; renderAt(offset); if (was) start(offset); });
+document.addEventListener('keydown', e => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); pp.click(); } });
+function loop() {
+  const t = Math.min(DUR, now());
+  if (playing) renderAt(t);
+  bar.value = t; timeEl.textContent = `${fmt(t)} / ${fmt(DUR)}`;
+  requestAnimationFrame(loop);
+}
+ready.then(() => { renderAt(2.8); requestAnimationFrame(loop); });
+})();
+</script>

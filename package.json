@@ -1,0 +1,19 @@
+{
+  "name": "dario-shabi",
+  "version": "1.0.0",
+  "description": "A 51-second satirical short film, drawn and scored entirely in code (canvas + WebAudio), rendered to MP4 with Puppeteer and ffmpeg.",
+  "private": true,
+  "scripts": {
+    "render": "node render.js",
+    "stills": "node render.js --stills"
+  },
+  "license": "MIT",
+  "author": "Darren Ter",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.3.0",
+    "puppeteer-core": "^25.12.0"
+  }
+}
