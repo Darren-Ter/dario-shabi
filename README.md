@@ -1,8 +1,8 @@
 # dario-shabi · 为什么 Dario 是个大傻逼
 
-A 51-second satirical short film in Chinese, styled as a riso-printed case file against Anthropic's CEO. Every frame and every note of the score is generated in code. There is no footage, no image assets and no audio samples: the film is one HTML file that draws on a `<canvas>` and synthesizes its 128 BPM soundtrack sample by sample.
+A 51-second satirical short film in Chinese, styled as a risograph-inspired pop poster and framed as a case file against Anthropic's CEO. Every frame and every note of the score is generated in code. There is no footage, no image assets and no audio samples: the film is one HTML file that draws on a `<canvas>` and synthesizes its 128 BPM soundtrack sample by sample.
 
-一部 51 秒的中文讽刺短片，以孔版印刷（riso）风格的「案卷」形式呈现。画面与音乐全部由代码实时生成：一个 HTML 文件，用 Canvas 绘制每一帧，用代码逐采样合成 128 BPM 的配乐。
+一部 51 秒的中文讽刺短片，采用 Risograph 海报风，以「案卷」形式呈现。画面与音乐全部由代码实时生成：一个 HTML 文件，用 Canvas 绘制每一帧，用代码逐采样合成 128 BPM 的配乐。
 
 [![▶ Watch the film](docs/03.38.jpg)](https://video.aigenius.media/film.mp4)
 
