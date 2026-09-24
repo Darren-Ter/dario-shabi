@@ -1,4 +1,4 @@
-<title>为什么 Dario 是个大傻逼</title>
+<title>Why Dario Is a Big Idiot</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=IBM+Plex+Mono:wght@500;700&family=Noto+Sans+SC:wght@500;900&family=Noto+Serif+SC:wght@900&family=ZCOOL+QingKe+HuangYou&display=swap">
@@ -26,6 +26,7 @@
     position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
     background: rgba(15,14,18,.55); border: 0; color: var(--text); cursor: pointer; font: inherit;
   }
+  #play[hidden] { display: none; }
   #play .btn { width: 84px; height: 84px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; }
   #play .btn::before { content: ""; border-left: 28px solid #fff; border-top: 17px solid transparent; border-bottom: 17px solid transparent; margin-left: 8px; }
   #play span { font-weight: 900; letter-spacing: .08em; font-size: 14px; }
@@ -42,14 +43,14 @@
 
 <div class="frame">
   <canvas id="c" width="1920" height="1080"></canvas>
-  <button id="play" aria-label="播放短片"><div class="btn"></div><span>播放（有声音）</span></button>
+  <button id="play" aria-label="Play the film"><div class="btn"></div><span>PLAY (SOUND ON)</span></button>
 </div>
 <div class="ctl">
-  <button id="pp">播放</button>
-  <input id="bar" type="range" min="0" max="51.375" step="0.01" value="0" aria-label="进度">
+  <button id="pp">Play</button>
+  <input id="bar" type="range" min="0" max="51.375" step="0.01" value="0" aria-label="Progress">
   <span id="time">0:00 / 0:51</span>
 </div>
-<p class="note">讽刺作品。Dario 本人的发言：2025 年 5 月 Axios 采访（一半入门级白领岗位）、2025 年 1 月个人博客《On DeepSeek and Export Controls》。Anthropic 公司层面（Dario 任 CEO）：使命陈述、2025 年 9 月服务条款更新（中资控股 &gt;50% 限制，自估损失数亿美元收入）、anthropic.com/supported-countries、Claude Max 定价；融资估值据 TechCrunch 等报道。画面与音乐全部由代码实时生成。</p>
+<p class="note">Satire. Dario's own statements: May 2025 Axios interview (half of entry-level white-collar jobs); January 2025 personal essay “On DeepSeek and Export Controls”. Anthropic company-level (Dario as CEO): mission statement; September 2025 terms-of-service update (restriction on entities &gt;50% Chinese-owned, self-estimated revenue loss in the hundreds of millions of dollars); anthropic.com/supported-countries; Claude Max pricing. Funding and valuation figures per TechCrunch and other reports. All visuals and music are generated in code in real time.</p>
 
 <script>
 (() => {
@@ -1175,14 +1176,15 @@ let actx = null, buffer = null, src = null, startAt = 0, offset = 0, playing = f
 const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 function now() { return playing ? actx.currentTime - startAt : offset; }
 function start(from) {
+  if (playing) return;
   if (!actx) { actx = new (window.AudioContext || window.webkitAudioContext)(); const [l, r] = synth(); buffer = actx.createBuffer(2, l.length, SR); buffer.copyToChannel(l, 0); buffer.copyToChannel(r, 1); }
   actx.resume();
   if (from >= DUR - .05) from = 0;
   src = actx.createBufferSource(); src.buffer = buffer; src.connect(actx.destination); src.start(0, from);
-  startAt = actx.currentTime - from; playing = true; playBtn.hidden = true; pp.textContent = '暂停';
-  src.onended = () => { if (playing && now() >= DUR - .1) { playing = false; offset = DUR; pp.textContent = '重播'; } };
+  startAt = actx.currentTime - from; playing = true; playBtn.hidden = true; pp.textContent = 'Pause';
+  src.onended = () => { if (playing && now() >= DUR - .1) { playing = false; offset = DUR; pp.textContent = 'Replay'; } };
 }
-function stop() { if (!playing) return; offset = now(); playing = false; try { src.onended = null; src.stop(); } catch (e) {} pp.textContent = '播放'; }
+function stop() { if (!playing) return; offset = now(); playing = false; try { src.onended = null; src.stop(); } catch (e) {} pp.textContent = 'Play'; }
 playBtn.addEventListener('click', () => start(offset));
 pp.addEventListener('click', () => playing ? stop() : start(offset >= DUR - .05 ? 0 : offset));
 bar.addEventListener('input', () => { const was = playing; stop(); offset = +bar.value; renderAt(offset); if (was) start(offset); });
